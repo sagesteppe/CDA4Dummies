@@ -62,13 +62,9 @@ options(
 )
 ```
 
-```{r}
-library(dcurves)
-```
+# Main 
 
-# Main << 3500 words  // freeform section heading >>
-
-# Introduction << 400 words >>
+# Introduction 
 
 Ecological models are being developed at an incredible rate. 
 Unfortunately, the ability of land managers to use models is limited as a function of resources [@taddeo2026species]. 
@@ -78,7 +74,7 @@ Here, we show that a framework used in clinical medical settings can help unders
 Decision curve analysis (DCA) was developed in the early millenium by Vickers et al. (2006) to help practicing doctors evaluate medical studies in their everyday practice [@vickers2006decision]. 
 This tool offers a relevant lens to contextualise the net benefits of using models under certain conditions, for phenomena at different prevalences across the landscape. 
 
-# Conceptual Background << 300 words max // essential components >>
+# Conceptual Background 
 
 << DCA Plot here >> all components labeled
 
@@ -104,7 +100,7 @@ PR-AUC, unlike the closely related ROC-AUC wherein a value of 0.5 indicates a mo
 For example, if a species is truly distributed in 0.1 (10% of a landscape), and a model has a PR-AUC of 0.2, it is twice as likely to detect it at landscape prevalence as by chance. 
 Hence PR-AUC, after correction to landscape prevalence, 
 
-## From Patients to Pixels and Patches << 250 words >>
+## From Patients to Pixels and Patches 
 
 DCA traditional context relates to the population of patients that a doctor serves. 
 The doctor is likely to have beliefs on how often a certain procedure, generally an invasive procedure to detect a disease, and under what conditions a procedure should be conducted. 
@@ -131,9 +127,9 @@ $$\text{Net benefit} = \underbrace{\frac{\text{occupied sites found}}{n}}_{\text
 
 
 
-# Case Study - Species Distribution Models << 250 words >>
+# Case Study - Species Distribution Models 
 
-## Study System Background << 100 words >>
+## Study System Background 
 
 Eriogonum coloradense is a rare species endemic to the central Rocky Mountains of Colorado USA. 
 In Benkendorf et al. 2027 we develop, and ground truth, species distribution models of it. 
@@ -199,7 +195,7 @@ When the P:A ratio is close to the landscape prevalence, the summary route is ad
 However, while useful, both of these approaches entail three assumptions, which may not be safe for all decisions.
 First, that pixels are independent and each able to harbour the taxon; second, that the model is perfectly calibrated, without bias; and third, that it interpolates across the whole landscape rather than extrapolating into part of it.
 
-### Patch Formulation  << 200 words >>
+### Patch Formulation 
 
 The above assumes a continuous landscape, however survey work and decisions are unlikely to be across the entire surface. 
 Rather actions are likely to be made at smaller units. 
@@ -218,7 +214,7 @@ detection. Each resulting patch is then scored as occupied if it contains ≥1 g
 presence, with an aggregated predicted probability (max or mean) over its pixels. Report the δ
 used and confirm the patch-level DCA is stable across a reasonable δ range. >>
 
-### Correcting to the Area of Applicability << 200 words >>
+### Correcting to the Area of Applicability 
 
 The area of applicability is the portion of the landscape where the model is interpolating. 
 For SDMs our work has shown that the area of applicability (Meyers & Pebesma) is best calculated using only training presences, or these and ground-truthed absences. 
@@ -234,7 +230,7 @@ Hence, models with fewer covariates, are able to retain larger AOAs.
 
 ![Restricting the decision curve to the area of applicability (in-domain, blue) strips away the easy absences that inflate the whole-test estimate (naive, orange). The in-domain model still adds net benefit at the low, broad-survey thresholds relevant to a rare-species search, but less than the naive curve implies. Both curves recalculated at 5% prevalence](../figures/dca_aoa_inflation.png){#fig-aoa}
 
-### Combining Expert Opinions and the model << 200 words >>
+### Combining Expert Opinions and the model 
 
 expert interpretation of top sites to visit and 
 
@@ -242,17 +238,17 @@ expert interpretation of top sites to visit and
 
 
 
-## A perfect model? << 200 words // where we need raw pr-auc values per point? >>
+## A perfect model? 
 
 Discuss biases effects on the model here // bias introduced here
 
-# Documentation << 200 words >>
 
-#### Shiny app
+# Using DCA Curves
 
-#### small r + python wrapper packages
-
-#### Communication template
+To facilitate the uptake of our suggestions, we have prepared small packages in both the R and Python language. 
+Our software builds on packages named dcurves in both programming langauges, and are available at: GITHUB MAIN LANDING PAGE [@sjoberg2025dcurves; @porwal_dcurves_2025]. 
+For users interested in using DCA using only summary PR-AUC values an interactive online calculator is available at GITHUB HERE.  
+We also have a developed a communication template, to convey the methods of our approach, and communicate your findings at GITHUB HERE. 
 
 # Conclusion << 200 words >>
 

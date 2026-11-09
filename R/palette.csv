@@ -1,0 +1,10 @@
+role,hex,description
+treat_none,#254441,Survey none (treat-none) / zero reference line
+treat_all,#FF715B,Survey all (treat-all)
+naive,#519E8A,Naive-corrected SDM: per-point exact / full-hold-out curve
+aoa,#846075,AOA-corrected SDM: in-domain (AOA-honest) curve
+summary,#D7BE82,Summary-route SDM: binormal reconstruction from reported PR-AUC
+sweep_point,#254441,Gap-vs-ratio scatter points (sized by hold-out n)
+sweep_trend,#FF715B,Gap-vs-ratio loess trend line
+ratio_high,#254441,Prevalence sweep gradient: high P:A ratio (low natural prevalence)
+ratio_low,#9FB1BC,Prevalence sweep gradient: low P:A ratio (high natural prevalence)

@@ -3,14 +3,14 @@ title: "Analyses — figures and tables for the main text"
 date: last-modified
 ---
 
-The analysis behind the main-text decision-curve figure, in one place. Code is hidden; the
+The analyses behind the main-text decision-curve figures, in one place. Code is hidden; each
 chunk regenerates its figure under `figures/`.
 
 ```{r setup}
 #| include: false
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       fig.align = "center", dpi = 150)
-suppressPackageStartupMessages({library(dcurves); library(dplyr); library(ggplot2)})
+suppressPackageStartupMessages({library(dcurves); library(dplyr); library(ggplot2); library(data.table)})
 HERE <- ".."                                      # this .qmd lives in manuscript/; repo root is ..
 for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 ```
@@ -31,10 +31,10 @@ EX   <- "1arc-Iteration1-PA1:30DO:0-Seed5101"   # spatial-mapping, 1:30 P:A (hol
 h <- read.csv(file.path(HERE, "data", "holdout_point_predictions.csv")) |>
   filter(model == EX, calibration == "raw", design == "spatial_mapping")
 
-PT_MARK <- 0.20                                   # "happy to survey 5 sites to find 1" -> p_t = 1/5
+PT_MARK <- 0.20 # "happy to survey 5 sites to find 1" -> p_t = 1/5
 PT_GRID <- seq(0.001, 0.50, by = 0.005)
 d <- dca(Presence ~ prob, data = h, prevalence = PI,
-         thresholds = PT_GRID,                     # run high so the SDM decay is visible (illustrative)
+         thresholds = PT_GRID, # run high so the SDM decay is visible (illustrative)
          label = list(prob = "SDM"))
 
 ## SUMMARY-METRIC route: fit an equal-variance binormal ROC (mu) reproducing the model's PR-AUC at
@@ -64,18 +64,18 @@ p_baseline <- ggplot(mapping = aes(threshold, net_benefit, colour = strategy)) +
   geom_vline(xintercept = PT_MARK, colour = "grey55", linetype = "dotted") +
   annotate("text", x = PT_MARK, y = PI * 1.08, hjust = -0.04, size = 3, colour = "grey35",
            label = sprintf("p[t]==0.20~': survey 5 to find 1'"), parse = TRUE) +
-  annotate("point", x = PT_MARK, y = nb_mark, colour = cda_cols[["blue"]], size = 2) +
+  annotate("point", x = PT_MARK, y = nb_mark, colour = cda_cols[["naive"]], size = 2) +
   geom_line(data = nb[is_ref, ], aes(linetype = strategy), linewidth = 1.1) +
   geom_line(data = nb[!is_ref, ], linewidth = 0.8) +
-  scale_colour_manual(values = c("SDM (per-point, exact)" = cda_cols[["blue"]],
-                                 "SDM (summary, binormal)" = cda_cols[["orange"]],
-                                 "Survey all (treat-all)" = cda_cols[["red"]],
-                                 "Survey none (treat-none)" = cda_cols[["grey"]]), name = NULL) +
+  scale_colour_manual(values = c("SDM (per-point, exact)" = cda_cols[["naive"]],
+                                 "SDM (summary, binormal)" = cda_cols[["summary"]],
+                                 "Survey all (treat-all)" = cda_cols[["treat_all"]],
+                                 "Survey none (treat-none)" = cda_cols[["treat_none"]]), name = NULL) +
   scale_linetype_reference() +
   scale_x_continuous(labels = scales::percent) +
   coord_cartesian(ylim = c(-0.02, PI * 1.12)) +    # clip the deep treat-all tail, keep its zero-crossing
   labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
-       title = sprintf("Decision curve for one SDM at %.1f%% landscape prevalence", 100 * PI),
+       title = sprintf("Decision curve SDM at %.1f%% landscape prevalence", 100 * PI),
        subtitle = "Per-point (raw predictions) vs the summary route (binormal from reported PR-AUC).") +
   theme_cda()
 
@@ -86,4 +86,19 @@ ggsave(file.path(HERE, "figures", "dca_baseline_dcurves.png"), p_baseline, width
 #| label: fig-baseline-dca
 #| fig-cap: "Decision curve for one SDM (1:30 P:A, hold-out prevalence ~3.3%) at 2.5% landscape prevalence. The per-point and summary-metric routes track closely for this model; the marked point is the net benefit at the \"survey five to find one\" threshold."
 p_baseline
+```
+
+## AOA downgrade: naive vs in-domain
+
+The same model scored two ways at 5% prevalence — *naive* on the full hold-out, and *AOA-honest*
+on the in-domain points only (presences vs the hard, environmentally-similar absences) — with both
+reweighted to the same prevalence. The gap is the inflation from trivially rejecting easy, far-from-
+suitable absences. (The ROC-AUC drop across all models is quantified in Appendix 2.)
+
+{{< include _aoa_downgrade.qmd >}}
+
+```{r}
+#| label: fig-aoa-inflation
+#| fig-cap: "Naive (full hold-out) vs AOA-honest (in-domain) decision curve for the example model, both at 5% prevalence. The two agree only at the broadest thresholds; the gap is the inflation contributed by easy absences, and the in-domain curve drops below \"survey none\" well before the \"survey five to find one\" tolerance."
+p_aoa
 ```

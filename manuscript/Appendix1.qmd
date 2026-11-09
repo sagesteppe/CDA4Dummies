@@ -59,8 +59,8 @@ spear_cox <- cor(res$cox_intercept, res$gap_mean, use = "complete.obs", method =
 plot_gap <- function(xvar, xlab) {
   ggplot(res, aes(.data[[xvar]], gap_mean, size = n)) +
     geom_hline(yintercept = 0, colour = "grey60") +
-    geom_point(alpha = 0.5, colour = cda_cols[["blue"]]) +
-    geom_smooth(aes(weight = n), method = "loess", se = TRUE, colour = cda_cols[["red"]], linewidth = 0.7, show.legend = FALSE) +
+    geom_point(alpha = 0.5, colour = cda_cols[["sweep_point"]]) +
+    geom_smooth(aes(weight = n), method = "loess", se = TRUE, colour = cda_cols[["sweep_trend"]], linewidth = 0.7, show.legend = FALSE) +
     scale_size_area(max_size = 4) +
     labs(x = xlab, y = "Mean net-benefit gap  (summary - exact)",
          title = sprintf("Summary-vs-exact decision-curve gap at %.1f%% prevalence", 100 * PI),
@@ -129,7 +129,7 @@ p_target <- ggplot(agg, aes(target_prev, gap, colour = nat_prev, group = pa_rati
   geom_line(linewidth = 0.6) +
   geom_point(data = markA, aes(target_prev, gap), colour = "black", size = 1.3, inherit.aes = FALSE) +
   scale_x_log10(labels = scales::percent) +
-  scale_colour_viridis_c(name = "natural\nprevalence", trans = "log", breaks = c(0.02, 0.05, 0.1, 0.25, 0.5)) +
+  scale_colour_ratio() +
   labs(x = "Target landscape prevalence", y = "Median net-benefit gap (summary - exact)",
        title = "Each P:A ratio's gap bottoms out at its own evaluation prevalence",
        subtitle = "Dots = each ratio's natural prevalence 1/(1+ratio). Above 0 = summary route optimistic.") +
@@ -141,7 +141,7 @@ p_collapse <- ggplot(agg, aes(target_prev / nat_prev, gap, colour = nat_prev, gr
   geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 1, linetype = "dotted", colour = "grey55") +
   geom_line(linewidth = 0.6) +
   scale_x_log10() +
-  scale_colour_viridis_c(name = "natural\nprevalence", trans = "log", breaks = c(0.02, 0.05, 0.1, 0.25, 0.5)) +
+  scale_colour_ratio() +
   labs(x = "Target prevalence / evaluation prevalence", y = "Median net-benefit gap (summary - exact)",
        title = "Collapse test: the gap is a function of target / evaluation prevalence",
        subtitle = "If the mechanism holds, every ratio falls on one curve crossing 0 at x = 1 (dotted).") +
