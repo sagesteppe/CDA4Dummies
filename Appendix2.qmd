@@ -1,0 +1,16 @@
+---
+title: "Appendix 2 — The applicability downgrade: easy absences inflate reported skill"
+date: last-modified
+---
+
+**Question.** A reported PR-AUC or ROC-AUC summarises a model over its whole test set. But does that number describe the decision a practitioner actually faces — distinguishing occupied sites from the *hard*, environmentally-similar sites they might otherwise survey?
+
+**Experiment.** We computed the Area of Applicability from the **training presences only** (pseudo-absences conflate the dissimilarity index) and labelled every hold-out point interpolation (`DI ≤ DI_thresh`) or extrapolation (`DI > DI_thresh`). This split is nearly collinear with the outcome: presences and a few hard absences fall in-domain, while the great majority of absences — environmentally distant from any occurrence — fall out-of-domain. We then scored each model two ways: *naive*, on the full hold-out, and *AOA-honest*, on the in-domain points only, reweighting both to the same prevalence so the only difference is which absences are in play. Performance was compared with ROC-AUC (prevalence-invariant) across all spatial-mapping models.
+
+**Result.** Restricting to the in-domain region — where the model must separate presences from absences that *resemble* occupied habitat — lowers measured skill in **100% of 128 models** (median ROC-AUC 0.96 → 0.76). The headline number is inflated by free credit for trivially rejecting the easy, far-from-suitable extrapolation absences (the "AUC inflated by easy absences" critique). In decision terms the effect is stark: the naive curve looks uniformly excellent, while the honest curve loses all value beyond a threshold of ~10%.
+
+![Naive vs AOA-honest decision curve for the example model, both at 5% prevalence. The two agree only at the broadest thresholds; the gap is the inflation contributed by easy absences, and the in-domain curve drops below "survey none" well before the "survey five to find one" tolerance.](figures/dca_aoa_inflation.png){#fig-aoa-inflation}
+
+**Isolating it from ground truth.** This downgrade uses only the hold-out predictions and the presences-only dissimilarity index — no field data — so it is an *a priori*, quantified penalty, and it is orthogonal to the prevalence correction of Appendix 1 (that sets the baseline; this measures discrimination among the hard cases). What it cannot reach is the *other* edge: the hold-out contains almost no points in genuinely novel, high-suitability environments, so it cannot characterise dangerous extrapolation. As expected, models perform poorly when extrapolating beyond their training space — but quantifying *that* collapse is an a posteriori, ground-truth question, not something the hold-out can answer.
+
+**Implication.** Report model skill restricted to the area of applicability; the headline, whole-test number overstates decision-relevant performance, and the overstatement is computable before any field work.

@@ -1,0 +1,14 @@
+project:
+  type: default
+  output-dir: docs
+
+format:
+  html:
+    theme: moon
+    toc: true
+    toc-depth: 2
+    toc-title: On this page
+    page-layout: article
+    fontsize: 1.05rem
+    linkcolor: "#2a78d6"
+    css: styles.css

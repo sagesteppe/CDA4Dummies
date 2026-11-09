@@ -1,0 +1,6 @@
+/.quarto/
+*.html.bak
+citations/
+data/*.csv
+citations/
+.quarto

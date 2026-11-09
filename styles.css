@@ -1,0 +1,96 @@
+/* --- DCA tutorial styling (tuned for the dark "moon" theme) ------- */
+
+:root {
+  --surface-1:   rgba(255, 255, 255, 0.035);
+  --text-primary: #e9ecef;
+  --text-secondary: #adb5bd;
+  --muted: #868e96;
+  --series-model: #3987e5;   /* blue   - use the model     (dark step) */
+  --series-all:   #d95926;   /* orange - survey every site (dark step) */
+  --series-none:  #868e96;   /* gray   - survey nothing              */
+  --pos: #37b24d;
+  --neg: #ff6b6b;
+  --panel-bg: rgba(255, 255, 255, 0.045);
+  --panel-border: rgba(255, 255, 255, 0.13);
+}
+
+/* The interactive block sits in a soft panel so it reads as "the tool". */
+.widget {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem 1.4rem;
+  margin: 1.5rem 0;
+}
+
+/* Observable Inputs labels inherit theme text; nudge spacing */
+.widget form { margin: 0.1rem 0; }
+
+/* Readout tiles */
+.readouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.tile {
+  flex: 1 1 160px;
+  background: var(--surface-1);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+}
+.tile .label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.25;
+}
+.tile .value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.15rem;
+  color: var(--text-primary);
+}
+.tile .value.pos { color: var(--pos); }
+.tile .value.neg { color: var(--neg); }
+.tile .sub {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.verdict {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 10px;
+  border-left: 4px solid var(--muted);
+  background: var(--surface-1);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+.verdict.win  { border-left-color: var(--pos); }
+.verdict.tie  { border-left-color: var(--series-all); }
+.verdict.lose { border-left-color: var(--neg); }
+
+/* Inline color chips used in prose */
+.chip {
+  display: inline-block;
+  width: 0.72em; height: 0.72em;
+  border-radius: 2px;
+  margin-right: 0.15em;
+}
+.chip-model { background: var(--series-model); }
+.chip-all   { background: var(--series-all); }
+.chip-none  { background: var(--series-none); }
+
+.formula {
+  background: var(--surface-1);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin: 1rem 0;
+}
+
+/* Plot figures: transparent so the panel shows through; light text */
+.widget figure, .widget svg { background: transparent !important; }

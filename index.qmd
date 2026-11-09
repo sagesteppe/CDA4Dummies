@@ -1,0 +1,773 @@
+---
+title: "Decision Curve Analysis for Dummies"
+subtitle: "An Interactive tutorial with plants"
+author: "sagesteppe"
+date: last-modified
+---
+
+## You're the land manager
+
+Forget doctors and biopsies — every other DCA tutorial uses them, and they get in
+the way. Here's the situation instead.
+
+A **rare plant** on land you manage has **8 known effective populations**. Under
+the listing rules, if there are **fewer than 12** effective populations it gets
+**listed** — which lands you with roughly **\$60,000 in consulting fees** (plus a
+pile of new restrictions). You're fairly sure more populations are out there: you
+have a **species distribution model (SDM)** that scores all **500 candidate
+habitat sites** across your unit with a probability of occurrence. But the plant
+is *rare* — only about **2%** of sites are actually occupied, so that's roughly
+**10 undiscovered populations hidden among 500 sites.**
+
+You have one lever: a **seasonal field crew**. Two people, two weeks, already on
+the payroll — about **\$6,400** of their time (40 hrs × \$20 × 2 for fringe × 2
+people × 2 weeks). Realistically they can carefully survey about **30 sites**.
+
+> **The decision: where do you send them?** Find **4 more** occupied sites and you
+> reach 12, and the listing — and its \$60K — goes away.
+
+You have three ways to choose which sites to survey:
+
+- <span class="chip chip-all"></span> **Survey every site** — impossible here (500
+  sites, a crew that can do 30), and the formal version is a disaster at 2%
+  occupancy, as you'll see.
+- <span class="chip chip-none"></span> **Survey nothing** — free, but you stay at 8
+  populations and eat the \$60K listing.
+- <span class="chip chip-model"></span> **Use the model** — send the crew to the
+  sites the SDM is most confident about.
+
+**Decision curve analysis** scores these on a common currency — **net benefit** —
+and then we'll translate that straight into *populations found* and *dollars*.
+
+## The one idea you need: the threshold probability
+
+How confident does the model have to be before a site is worth a crew-day? That
+cutoff is the **threshold probability**, $p_t$. It isn't a statistic — it's a
+statement about *your* costs:
+
+$$\frac{p_t}{1 - p_t} = \frac{\text{cost of one wasted survey}}{\text{value of one occupied site found}}$$
+
+Set $p_t$ low and you're saying *"I'll check even a long shot"*; set it high and
+you'll only spend a crew-day on near-sure things. **There's no single correct
+threshold** — DCA's trick is to evaluate *every* threshold at once and let you see
+where using the model actually pays.
+
+## Net benefit
+
+For any strategy, at a chosen threshold $p_t$:
+
+::: {.formula}
+$$\text{Net benefit} = \underbrace{\frac{\text{occupied sites found}}{n}}_{\text{the good}} \;-\; \underbrace{\frac{\text{empty sites surveyed}}{n} \times \frac{p_t}{1 - p_t}}_{\text{the cost of wasted trips}}$$
+:::
+
+Net benefit is "occupied sites found per site surveyed," after subtracting a
+penalty for wasted trips weighted by *your* cost ratio. "Survey nothing" always
+scores exactly **0** — the natural baseline. At 2% prevalence these per-site
+numbers get tiny and abstract (you'll see net benefits like 0.005), which is
+exactly why the panel below **translates them into populations and dollars.**
+
+## The interactive part {#widget}
+
+Drag the sliders. The left chart is the classic DCA curve (net benefit vs. every
+threshold); the right chart and the tiles turn your selected threshold into the
+decision you actually face.
+
+::: {.widget}
+
+```{ojs}
+//| echo: false
+viewof prev = Inputs.range([0.005, 0.15], {
+  value: 0.02, step: 0.005, label: "Species prevalence (share of sites occupied)"
+})
+viewof prauc = Inputs.range([0.10, 0.95], {
+  value: 0.70, step: 0.05, label: "Model skill (AUC-PR)"
+})
+viewof capacity = Inputs.range([10, 80], {
+  value: 30, step: 5, label: "Crew capacity (sites surveyable)"
+})
+viewof pt = Inputs.range([0.02, 0.80], {
+  value: 0.45, step: 0.01, label: "Your threshold probability (pₜ)"
+})
+```
+
+```{ojs}
+//| echo: false
+html`<div style="display:flex;flex-wrap:wrap;gap:1rem;justify-content:center">
+  ${dcaChart}${listingChart}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+readoutTiles
+```
+
+```{ojs}
+//| echo: false
+verdictBox
+```
+
+:::
+
+<p style="font-size:0.8rem;color:#898781;margin-top:-0.4rem">
+Everything is simulated in your browser. <strong>AUC-PR</strong> (area under the
+precision–recall curve) is the right skill metric for a rare species: a useless
+model scores about the prevalence (here ~0.02) and a perfect one scores 1.0 — so a
+realistic SDM sits around 0.65–0.75. The <strong>P(avoid listing)</strong> chart
+runs 1,500 simulated field seasons at each threshold.
+</p>
+
+## How to read it — and the real lesson
+
+- **Left (DCA) chart.** Where the <span class="chip chip-model"></span> model line
+  is highest, using the model beats both naive rules. Notice the
+  <span class="chip chip-all"></span> "survey every site" line starts at the
+  prevalence (~2%) on the far left and then *plummets* — at 2% occupancy,
+  surveying everything is almost all wasted trips. The
+  <span class="chip chip-none"></span> zero line is "survey nothing."
+- **Right chart.** The payoff: your probability of finding the 4 populations you
+  need. **Model-guided vs. random is the difference between ~0% and nearly
+  certain.** A good SDM here isn't a nicety — it's the whole ballgame.
+- **The non-obvious bit.** Your crew is *already paid for the season*, so a wasted
+  trip costs you almost nothing extra — which means the net-benefit-optimal
+  threshold is **low**. Start at $p_t = 0.45$ and the model flags only a handful of
+  sites, leaving most of your crew's time unused. **Slide the threshold down** and
+  watch P(avoid listing) climb as you put the whole crew to work on the model's
+  best bets. That's DCA telling you to be *less* picky than instinct says, because
+  your costs are sunk.
+
+Try it: push **AUC-PR** down toward 0.2 (a weak model) and the model's edge over
+random collapses. Push crew **capacity** up and watch how much more a bigger crew
+buys you.
+
+## Why this beats "my AUC-PR is 0.7"
+
+A skill metric describes the *model*. Net benefit — and its translation into
+populations and dollars — describes *the decision you make with it*, at the cost
+trade-off you actually face. Two models with identical AUC-PR can lead to very
+different outcomes once capacity, prevalence, and stakes enter. The gap between a
+good model and a *useful decision* is exactly what decision curve analysis makes
+visible.
+
+# §2 · A fair baseline: beating the expert
+
+§1 had a dirty secret. I pitted the model against *random* deployment — and no
+field botanist searches at random. That strawman is exactly why the model looked
+like a savior (0% → 98%). The honest question in decision curve analysis is always
+**"does the model beat the realistic status quo?"** — and here the status quo is a
+knowledgeable botanist. In DCA terms, the expert's shortlist is just **another
+strategy whose curve we plot**; the model's value is how far it sits *above the
+expert's line*, not above random.
+
+**Two biological layers matter here.** Your SDM is good at predicting *suitable
+habitat* (a realistic **AUC-PR ≈ 0.70**). But suitable ≠ occupied: whether a
+suitable site actually holds a population is a colonization lottery — dispersal,
+history, microsite. That second layer is nearly random, and it puts a hard
+**ceiling** on *anyone's* ability to find populations. In this landscape even a
+*perfect* habitat model, surveying 30 sites, has only about a **48% chance** of
+finding the 4 populations you need. That ceiling is why a botanist who gets **40%
+of populations onto a 50-site shortlist is almost god-like** — they're already
+near the limit of what's knowable.
+
+So two readers — the SDM and the expert — each squint at the same hidden
+suitability through their own noise. The expert catches ~40% of populations; the
+question is what the model *adds*.
+
+**And this time, no guessing the threshold.** The slider for $p_t$ is gone. You set
+the *costs* — what a wasted survey costs, and what the listing costs — and the
+widget **derives** $p_t$ from them (plus your capacity). You set dollars; the math
+sets the probability.
+
+::: {.widget}
+
+```{ojs}
+//| echo: false
+viewof prauc2 = Inputs.range([0.30, 0.95], { value: 0.70, step: 0.05, label: "SDM skill — AUC-PR for suitable habitat" })
+viewof capacity2 = Inputs.range([10, 60], { value: 30, step: 5, label: "Crew capacity (sites surveyable)" })
+viewof cwaste = Inputs.range([50, 1000], { value: 200, step: 50, label: "Cost of one wasted survey ($/site)" })
+viewof listcost = Inputs.range([20000, 150000], { value: 60000, step: 5000, label: "Listing cost if < 12 populations ($)" })
+```
+
+```{ojs}
+//| echo: false
+html`<div style="display:flex;flex-wrap:wrap;gap:1rem;justify-content:center">
+  ${dcaChart2}${payoffChart2}
+</div>`
+```
+
+```{ojs}
+//| echo: false
+tiles2
+```
+
+```{ojs}
+//| echo: false
+verdict2
+```
+
+:::
+
+<p style="font-size:0.8rem;color:#868e96;margin-top:-0.4rem">
+Fixed here: landscape prevalence 2% (~10 populations hidden in 500 sites), expert
+shortlist 50 sites capturing ~40% of populations, 8 known populations, need 4 more.
+Simulated over 1,200 field seasons. The SDM returns <em>calibrated</em> occupancy
+probabilities; the derived threshold is
+<code>max(cost floor, capacity cutoff)</code>.
+</p>
+
+## How to read §2
+
+- **Left chart.** The <span class="chip chip-model"></span> SDM's net-benefit curve
+  vs. the <span class="chip chip-all"></span> expert's shortlist (a fixed strategy,
+  so a straight line). The black line is the **derived threshold** — you no longer
+  pick it. Where the SDM curve sits *above* the expert line at that threshold, the
+  model earns its keep; where they touch, it doesn't.
+- **Right chart.** Probability of actually finding the 4 populations, for the expert
+  alone, the SDM alone, and **both combined** — against the dashed **ceiling** (the
+  best any method could do). Notice how little daylight there is between a good SDM
+  and a good expert, and how the *combination* reaches closest to the ceiling:
+  because the model and the botanist make **independent** errors about the same
+  habitat, averaging them cancels noise. **That — not replacing the expert — is
+  where the model's honest value lives.**
+- **The humbling part.** Everything is pinned under ~48%. When occupancy is a
+  colonization lottery, no amount of model skill makes the problem easy; it only
+  moves you a few points. DCA is what keeps you honest about how few.
+
+---
+
+```{ojs}
+//| echo: false
+// ---------- math helpers ----------
+normPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI)
+
+function normCDF(x) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = normPDF(x);
+  let p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 +
+            t * (-1.821255978 + t * 1.330274429))));
+  return x >= 0 ? 1 - p : p;
+}
+
+// calibrated posterior P(occupied | latent score x), bi-normal model
+posterior = (x, mu, prev) => {
+  const fP = prev * normPDF(x - mu);
+  const fA = (1 - prev) * normPDF(x);
+  return fP / (fP + fA);
+}
+
+// analytic PR-AUC for a bi-normal model with separation mu and prevalence prev
+function prAUC(mu, prev) {
+  let prevR = 0, prevP = 1, area = 0;
+  for (let c = 7; c >= -7.0001; c -= 0.01) {
+    const tpr = 1 - normCDF(c - mu);           // recall
+    const fpr = 1 - normCDF(c);
+    const tp = prev * tpr, fp = (1 - prev) * fpr;
+    const prec = (tp + fp) > 0 ? tp / (tp + fp) : 1;
+    area += (tpr - prevR) * (prec + prevP) / 2;
+    prevR = tpr; prevP = prec;
+  }
+  return area;
+}
+
+// invert PR-AUC -> separation mu (binary search) at a given prevalence
+function muForPRAUC(target, prev) {
+  if (target <= prev) return 0;
+  let lo = 0, hi = 8;
+  for (let k = 0; k < 50; k++) {
+    const mid = (lo + hi) / 2;
+    if (prAUC(mid, prev) < target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// seeded RNG
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// linear interpolation into a (grid, values) table
+function interp(grid, arr, x) {
+  if (x <= grid[0]) return arr[0];
+  if (x >= grid[grid.length - 1]) return arr[arr.length - 1];
+  const i = d3.bisectLeft(grid, x);
+  const t = (x - grid[i - 1]) / (grid[i] - grid[i - 1]);
+  return arr[i - 1] * (1 - t) + arr[i] * t;
+}
+```
+
+```{ojs}
+//| echo: false
+// ---------- fixed scenario constants ----------
+M = 500            // candidate sites scored by the SDM
+KNOWN = 8          // known populations now
+TARGET = 12        // threshold for avoiding listing
+NEED = TARGET - KNOWN   // = 4 more needed
+LISTING = 60000    // $ cost if listed
+CREW = 6400        // $ cost of deploying the crew
+```
+
+```{ojs}
+//| echo: false
+mu = muForPRAUC(prauc, prev)
+
+// ---------- analytic DCA net-benefit curves (smooth) ----------
+// score cutoff c such that posterior(c) = pt  (monotone increasing in x)
+function scoreCutoff(ptv, mu, prev) {
+  if (mu <= 0) return ptv <= prev ? -Infinity : Infinity;
+  let lo = -20, hi = 30;
+  for (let k = 0; k < 60; k++) {
+    const mid = (lo + hi) / 2;
+    if (posterior(mid, mu, prev) < ptv) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+function nbModel(ptv) {
+  const c = scoreCutoff(ptv, mu, prev);
+  const sens = 1 - normCDF(c - mu);           // P(flag | occupied)
+  const fpr  = 1 - normCDF(c);                // P(flag | empty)
+  return prev * sens - (1 - prev) * fpr * (ptv / (1 - ptv));
+}
+function nbAll(ptv) {
+  return prev - (1 - prev) * (ptv / (1 - ptv));
+}
+nbGrid = d3.range(0.02, 0.8001, 0.01)
+nbData = nbGrid.flatMap(t => [
+  { threshold: t, nb: nbModel(t), strategy: "Use the model" },
+  { threshold: t, nb: nbAll(t),   strategy: "Survey every site" }
+])
+nbMax = d3.max(nbGrid, t => nbModel(t))
+```
+
+```{ojs}
+//| echo: false
+// ---------- Monte Carlo over simulated field seasons ----------
+// For each threshold: dispatch the crew to the highest-probability flagged sites
+// (capped at capacity), count occupied sites found, score P(found >= NEED).
+scenario = {
+  const R = 1500;
+  const rng = mulberry32(777);
+  const gauss = () => {
+    const u1 = rng(), u2 = rng();
+    return Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2);
+  };
+  const grid = d3.range(0.02, 0.8001, 0.02);
+  const emModel = grid.map(() => 0), winModel = grid.map(() => 0);
+  let emTop = 0, winTop = 0, emRand = 0, winRand = 0;
+
+  for (let r = 0; r < R; r++) {
+    const ys = new Int8Array(M), ps = new Float64Array(M);
+    for (let i = 0; i < M; i++) {
+      const y = rng() < prev ? 1 : 0;
+      const x = (y ? mu : 0) + gauss();
+      ys[i] = y; ps[i] = posterior(x, mu, prev);
+    }
+    const order = Array.from({ length: M }, (_, i) => i).sort((a, b) => ps[b] - ps[a]);
+    const prefY = new Int16Array(M + 1);
+    for (let i = 0; i < M; i++) prefY[i + 1] = prefY[i] + ys[order[i]];
+
+    // use-the-model, full capacity (top-K, threshold-independent)
+    const fTop = prefY[Math.min(capacity, M)];
+    emTop += fTop; if (fTop >= NEED) winTop++;
+
+    // random capacity sites
+    const idx = Array.from({ length: M }, (_, i) => i);
+    let fR = 0;
+    for (let i = 0; i < capacity; i++) {
+      const j = i + Math.floor(rng() * (M - i));
+      const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+      fR += ys[idx[i]];
+    }
+    emRand += fR; if (fR >= NEED) winRand++;
+
+    // model with threshold pt (flag p>=pt, survey highest-prob up to capacity)
+    for (let g = 0; g < grid.length; g++) {
+      const t = grid[g];
+      let lo = 0, hi = M;                         // count of ps>=t (order is desc)
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (ps[order[mid]] >= t) lo = mid + 1; else hi = mid; }
+      const surveyed = Math.min(lo, capacity);
+      const f = prefY[surveyed];
+      emModel[g] += f; if (f >= NEED) winModel[g]++;
+    }
+  }
+  return {
+    R, grid,
+    emModel: emModel.map(v => v / R),
+    pwinModel: winModel.map(v => v / R),
+    emTop: emTop / R, pwinTop: winTop / R,
+    emRand: emRand / R, pwinRand: winRand / R
+  };
+}
+```
+
+```{ojs}
+//| echo: false
+// values at the currently selected threshold
+cutoff = scoreCutoff(pt, mu, prev)
+sensPt = 1 - normCDF(cutoff - mu)
+fprPt  = 1 - normCDF(cutoff)
+nFlag  = Math.round(M * (prev * sensPt + (1 - prev) * fprPt))   // sites flagged at pt
+nSurvey = Math.min(nFlag, capacity)
+expFinds = interp(scenario.grid, scenario.emModel, pt)
+pWin     = interp(scenario.grid, scenario.pwinModel, pt)
+dollarsModel = pWin * LISTING - CREW         // expected savings vs doing nothing
+dollarsRand  = scenario.pwinRand * LISTING - CREW
+```
+
+```{ojs}
+//| echo: false
+// ---------- Chart A: classic DCA net-benefit curve ----------
+dcaChart = Plot.plot({
+  width: 430, height: 360,
+  marginLeft: 56, marginBottom: 44,
+  style: { fontSize: "12px", background: "transparent", color: "#c3c2b7" },
+  title: "Decision curve: net benefit",
+  x: { label: "Threshold probability  pₜ →", domain: [0, 0.8], grid: true, tickFormat: ".0%" },
+  y: {
+    label: "↑ Net benefit (per site)",
+    domain: [Math.min(-0.01, -nbMax * 0.5), Math.max(0.025, nbMax * 1.15)],
+    grid: true
+  },
+  color: {
+    domain: ["Use the model", "Survey every site"],
+    range: ["#3987e5", "#d95926"],
+    legend: true
+  },
+  marks: [
+    Plot.ruleY([0], { stroke: "#868e96", strokeDasharray: "4 3" }),
+    Plot.text([{ x: 0.78, y: 0 }], { x: "x", y: "y", text: ["survey nothing"], dy: -7, fill: "#868e96", fontSize: 10.5, textAnchor: "end" }),
+    Plot.line(nbData, { x: "threshold", y: "nb", stroke: "strategy", strokeWidth: 2.5, curve: "basis", clip: true }),
+    Plot.ruleX([pt], { stroke: "#e9ecef", strokeOpacity: 0.4 }),
+    Plot.dot([{ t: pt, nb: nbModel(pt) }], { x: "t", y: "nb", r: 4.5, fill: "#3987e5", stroke: "#1c1e22", strokeWidth: 1.5, clip: true }),
+    Plot.tip(nbData, Plot.pointerX({ x: "threshold", y: "nb", stroke: "strategy", format: { threshold: ".0%", nb: ".4f", stroke: true } }))
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// ---------- Chart B: probability of avoiding listing ----------
+winData = scenario.grid.map((t, i) => ({ threshold: t, p: scenario.pwinModel[i] }))
+listingChart = Plot.plot({
+  width: 430, height: 360,
+  marginLeft: 50, marginBottom: 44,
+  style: { fontSize: "12px", background: "transparent", color: "#c3c2b7" },
+  title: "Payoff: chance of finding the 4 you need",
+  x: { label: "Threshold probability  pₜ →", domain: [0, 0.8], grid: true, tickFormat: ".0%" },
+  y: { label: "↑ P(reach 12 populations)", domain: [0, 1], grid: true, tickFormat: ".0%" },
+  marks: [
+    // random-deployment reference
+    Plot.ruleY([scenario.pwinRand], { stroke: "#868e96", strokeDasharray: "4 3" }),
+    Plot.text([{ x: 0.78, y: scenario.pwinRand }], { x: "x", y: "y", text: ["random crew → " + (scenario.pwinRand * 100).toFixed(0) + "%"], dy: -7, fill: "#868e96", fontSize: 10.5, textAnchor: "end" }),
+    Plot.line(winData, { x: "threshold", y: "p", stroke: "#3987e5", strokeWidth: 2.5, curve: "basis" }),
+    Plot.ruleX([pt], { stroke: "#e9ecef", strokeOpacity: 0.4 }),
+    Plot.dot([{ t: pt, p: pWin }], { x: "t", y: "p", r: 4.5, fill: "#3987e5", stroke: "#1c1e22", strokeWidth: 1.5 }),
+    Plot.tip(winData, Plot.pointerX({ x: "threshold", y: "p", format: { threshold: ".0%", p: ".0%" } }))
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+// ---------- readout tiles ----------
+money = (v) => (v < 0 ? "−$" : "+$") + Math.abs(Math.round(v)).toLocaleString()
+
+readoutTiles = htl.html`
+<div class="readouts">
+  <div class="tile">
+    <div class="label">Sites the model flags at pₜ=${(pt*100).toFixed(0)}%</div>
+    <div class="value">${nFlag}<span style="font-size:0.9rem;font-weight:400;color:#898781"> / ${M}</span></div>
+    <div class="sub">crew can survey ${capacity} → you'd visit ${nSurvey}</div>
+  </div>
+  <div class="tile">
+    <div class="label">Expected new populations found</div>
+    <div class="value ${expFinds >= NEED ? "pos" : ""}">${expFinds.toFixed(1)}</div>
+    <div class="sub">you need ${NEED} (to go from ${KNOWN} to ${TARGET})</div>
+  </div>
+  <div class="tile">
+    <div class="label">P(avoid listing) with the model</div>
+    <div class="value ${pWin >= 0.5 ? "pos" : (pWin < 0.2 ? "neg" : "")}">${(pWin*100).toFixed(0)}%</div>
+    <div class="sub">random crew: ${(scenario.pwinRand*100).toFixed(0)}%</div>
+  </div>
+  <div class="tile">
+    <div class="label">Expected \$ vs. doing nothing</div>
+    <div class="value ${dollarsModel > 0 ? "pos" : "neg"}">${money(dollarsModel)}</div>
+    <div class="sub">random crew: ${money(dollarsRand)}</div>
+  </div>
+</div>`
+```
+
+```{ojs}
+//| echo: false
+// ---------- plain-language verdict ----------
+verdictBox = {
+  let cls, msg;
+  const idle = capacity - nSurvey;
+  if (pWin >= 0.75) {
+    cls = "win";
+    msg = html`At <b>pₜ = ${(pt*100).toFixed(0)}%</b> with an AUC-PR of
+      <b>${prauc.toFixed(2)}</b>, the model-guided crew has a <b>${(pWin*100).toFixed(0)}%
+      chance</b> of finding the ${NEED} populations you need — expected value
+      <b>${money(dollarsModel)}</b> versus doing nothing. A random crew's odds here
+      are ${(scenario.pwinRand*100).toFixed(0)}%. The model is doing the work.`;
+  } else if (pWin >= 0.35) {
+    cls = "tie";
+    msg = html`At <b>pₜ = ${(pt*100).toFixed(0)}%</b> you've a <b>${(pWin*100).toFixed(0)}%</b>
+      shot — decent, but you're ${idle > 0 ? html`flagging only ${nFlag} sites and leaving
+      <b>${idle} crew-days idle</b>. Your crew is already paid for the season, so a
+      wasted trip costs almost nothing — <b>slide pₜ down</b> to put the whole crew
+      to work and watch the odds climb.` : html`leaving odds on the table — try a
+      stronger model or a bigger crew.`}`;
+  } else {
+    cls = "lose";
+    msg = html`At <b>pₜ = ${(pt*100).toFixed(0)}%</b> the odds of avoiding listing are only
+      <b>${(pWin*100).toFixed(0)}%</b>. ${idle > 0 ? html`You're flagging just ${nFlag}
+      sites while your crew could do ${capacity} — <b>lower the threshold</b> to use that
+      capacity.` : html`Even at full tilt this model + crew can't reliably clear the bar;
+      a better SDM or more survey capacity is the fix.`}`;
+  }
+  return htl.html`<div class="verdict ${cls}">${msg}</div>`;
+}
+```
+
+```{ojs}
+//| echo: false
+// ===================== §2 : expert baseline =====================
+// inverse standard normal (Acklam) — not needed in §1, add here
+function normInv(p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+             1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+             6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+             -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+             3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r;
+  if (p < plow) { q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (p <= phigh) { q = p - 0.5; r = q * q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else { q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+```
+
+```{ojs}
+//| echo: false
+// two-layer model constants (prevalence fixed at 2%)
+BETA = 0.6                                   // suitability -> occupancy coupling (weak = hard ceiling)
+ALPHA2 = normInv(0.02) * Math.sqrt(1 + BETA * BETA)   // so E[occupancy] = 2%
+SHORT2 = 50                                  // expert shortlist size
+SE2 = 0.644                                  // expert noise -> ~40% population recall@50 (calibrated offline)
+
+// AUC-PR(suitability) <-> model noise sigma_m, precomputed offline
+SIGMA_LUT = [0.10,0.20,0.30,0.40,0.50,0.60,0.75,0.90,1.10,1.35,1.65,2.00,2.50]
+AUCPR_LUT = [0.9856,0.9472,0.8923,0.8280,0.7606,0.6942,0.6026,0.5240,0.4400,0.3631,0.3002,0.2524,0.2106]
+
+function sigmaFromAUC(target) {
+  const A = AUCPR_LUT, S = SIGMA_LUT;
+  if (target >= A[0]) return S[0];
+  if (target <= A[A.length - 1]) return S[S.length - 1];
+  for (let i = 0; i < A.length - 1; i++) {
+    if (target <= A[i] && target >= A[i + 1]) {
+      const t = (A[i] - target) / (A[i] - A[i + 1]);
+      return S[i] + t * (S[i + 1] - S[i]);
+    }
+  }
+  return S[S.length - 1];
+}
+
+// calibrated occupancy posterior given model score m
+function postM2(m, sm) {
+  const vp = sm * sm / (1 + sm * sm), mp = m / (1 + sm * sm);
+  return normCDF((BETA * mp + ALPHA2) / Math.sqrt(1 + BETA * BETA * vp));
+}
+```
+
+```{ojs}
+//| echo: false
+// Monte Carlo over field seasons: expert vs SDM vs combined, plus net-benefit curves
+scenario2 = {
+  const sm = sigmaFromAUC(prauc2), se = SE2, cap = capacity2, R = 1200;
+  const rng = mulberry32(2024);
+  const gauss = () => { const u1 = rng(), u2 = rng();
+    return Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2); };
+  const grid = d3.range(0.005, 0.3001, 0.005);
+  const G = grid.length;
+  const diffTP = new Float64Array(G + 1), diffFP = new Float64Array(G + 1);
+  const wM = 1 / (sm * sm), wE = 1 / (se * se);
+  let TPe = 0, FPe = 0, winE = 0, winM = 0, winC = 0, winCeil = 0, p30 = 0;
+  const nTot = R * M;
+
+  for (let r = 0; r < R; r++) {
+    const H = new Float64Array(M), Y = new Int8Array(M), Ms = new Float64Array(M), Es = new Float64Array(M);
+    for (let i = 0; i < M; i++) {
+      const h = gauss(); H[i] = h;
+      Y[i] = rng() < normCDF(BETA * h + ALPHA2) ? 1 : 0;
+      Ms[i] = h + sm * gauss(); Es[i] = h + se * gauss();
+    }
+    // SDM net-benefit curve: flag p̂ >= pt over ALL sites (difference-array trick)
+    for (let i = 0; i < M; i++) {
+      const pv = postM2(Ms[i], sm);
+      let lo = 0, hi = G; while (lo < hi) { const mid = (lo + hi) >> 1; if (grid[mid] <= pv) lo = mid + 1; else hi = mid; }
+      if (Y[i]) { diffTP[0] += 1; diffTP[lo] -= 1; } else { diffFP[0] += 1; diffFP[lo] -= 1; }
+    }
+    // rank by each reader
+    const ix = Array.from({ length: M }, (_, i) => i);
+    const idxM = ix.slice().sort((a, b) => Ms[b] - Ms[a]);
+    const idxE = ix.slice().sort((a, b) => Es[b] - Es[a]);
+    const idxC = ix.slice().sort((a, b) => (Ms[b]*wM + Es[b]*wE) - (Ms[a]*wM + Es[a]*wE));
+    const idxH = ix.slice().sort((a, b) => H[b] - H[a]);
+    let fE = 0, fM = 0, fC = 0, fH = 0;
+    for (let k = 0; k < cap; k++) { fE += Y[idxE[k]]; fM += Y[idxM[k]]; fC += Y[idxC[k]]; fH += Y[idxH[k]]; }
+    TPe += fE; FPe += (cap - fE);
+    if (fE >= NEED) winE++; if (fM >= NEED) winM++; if (fC >= NEED) winC++; if (fH >= NEED) winCeil++;
+    p30 += postM2(Ms[idxM[cap - 1]], sm);
+  }
+  let aTP = 0, aFP = 0;
+  const nbM = [], nbE = [];
+  for (let g = 0; g < G; g++) {
+    aTP += diffTP[g]; aFP += diffFP[g];
+    const w = grid[g] / (1 - grid[g]);
+    nbM.push((aTP - aFP * w) / nTot);
+    nbE.push((TPe - FPe * w) / nTot);
+  }
+  return { grid, nbM, nbE, pE: winE/R, pM: winM/R, pC: winC/R, pCeil: winCeil/R, p30: p30/R, cap, sm };
+}
+```
+
+```{ojs}
+//| echo: false
+// derived threshold from costs + capacity
+Vfind2 = listcost / NEED                         // value of one find (listing cost spread over the 4 needed)
+ptCost = cwaste / (cwaste + Vfind2)              // "worth-it" floor
+ptCap = scenario2.p30                            // posterior of the marginal (capacity-th) site
+ptOp = Math.max(ptCost, ptCap)                   // operating threshold
+ptBinds = ptCost >= ptCap ? "cost" : "capacity"
+```
+
+```{ojs}
+//| echo: false
+nbData2 = scenario2.grid.flatMap((t, g) => [
+  { threshold: t, nb: scenario2.nbM[g], strategy: "SDM" },
+  { threshold: t, nb: scenario2.nbE[g], strategy: "Expert shortlist" }
+])
+nb2Max = d3.max(scenario2.nbM.concat(scenario2.nbE))
+dcaChart2 = Plot.plot({
+  width: 430, height: 360, marginLeft: 58, marginBottom: 44,
+  style: { fontSize: "12px", background: "transparent", color: "#c3c2b7" },
+  title: "Net benefit: SDM vs. the expert",
+  x: { label: "Threshold probability  pₜ →", domain: [0, 0.3], grid: true, tickFormat: ".0%" },
+  y: { label: "↑ Net benefit (per site)", domain: [Math.min(-0.004, -nb2Max * 0.4), Math.max(0.006, nb2Max * 1.15)], grid: true },
+  color: { domain: ["SDM", "Expert shortlist"], range: ["#3987e5", "#d95926"], legend: true },
+  marks: [
+    Plot.ruleY([0], { stroke: "#868e96", strokeDasharray: "4 3" }),
+    Plot.line(nbData2, { x: "threshold", y: "nb", stroke: "strategy", strokeWidth: 2.5, curve: "basis", clip: true }),
+    Plot.ruleX([ptOp], { stroke: "#e9ecef", strokeOpacity: 0.55 }),
+    Plot.text([{ x: ptOp, y: Math.max(0.006, nb2Max * 1.15) }], { x: "x", y: "y", text: ["derived pₜ = " + (ptOp*100).toFixed(1) + "%"], dy: -2, dx: 3, fill: "#e9ecef", fontSize: 10.5, textAnchor: "start" }),
+    Plot.tip(nbData2, Plot.pointerX({ x: "threshold", y: "nb", stroke: "strategy", format: { threshold: ".1%", nb: ".4f", stroke: true } }))
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+barData2 = [
+  { s: "Expert alone", p: scenario2.pE },
+  { s: "SDM alone", p: scenario2.pM },
+  { s: "SDM + expert", p: scenario2.pC }
+]
+payoffChart2 = Plot.plot({
+  width: 430, height: 360, marginLeft: 100, marginBottom: 44,
+  style: { fontSize: "12px", background: "transparent", color: "#c3c2b7" },
+  title: "P(find the 4 you need) — vs. the ceiling",
+  x: { label: "probability →", domain: [0, Math.max(0.6, scenario2.pCeil * 1.12)], grid: true, tickFormat: ".0%" },
+  y: { label: null, domain: ["SDM + expert", "SDM alone", "Expert alone"] },
+  color: { domain: ["Expert alone", "SDM alone", "SDM + expert"], range: ["#d95926", "#3987e5", "#9085e9"] },
+  marks: [
+    Plot.barX(barData2, { y: "s", x: "p", fill: "s", rx: 3, insetTop: 6, insetBottom: 6 }),
+    Plot.text(barData2, { y: "s", x: "p", text: d => (d.p*100).toFixed(0) + "%", textAnchor: "start", dx: 5, fill: "#e9ecef", fontSize: 12.5 }),
+    Plot.ruleX([scenario2.pCeil], { stroke: "#868e96", strokeDasharray: "4 3" }),
+    Plot.text([{ x: scenario2.pCeil }], { x: "x", frameAnchor: "top", text: ["ceiling " + (scenario2.pCeil*100).toFixed(0) + "%"], dy: -4, fill: "#868e96", fontSize: 10.5 })
+  ]
+})
+```
+
+```{ojs}
+//| echo: false
+tiles2 = {
+  const edgeM = (scenario2.pM - scenario2.pE) * 100;
+  const edgeC = (scenario2.pC - scenario2.pE) * 100;
+  const sgn = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(0);
+  return htl.html`
+<div class="readouts">
+  <div class="tile">
+    <div class="label">Derived threshold pₜ (from your costs)</div>
+    <div class="value">${(ptOp*100).toFixed(1)}%</div>
+    <div class="sub">${ptBinds === "cost" ? "cost floor binds" : "capacity binds"} · cost floor ${(ptCost*100).toFixed(1)}%, capacity ${(ptCap*100).toFixed(1)}%</div>
+  </div>
+  <div class="tile">
+    <div class="label"><span class="chip chip-all"></span>Expert alone — P(avoid listing)</div>
+    <div class="value">${(scenario2.pE*100).toFixed(0)}%</div>
+    <div class="sub">a near-god-like botanist (40% recall)</div>
+  </div>
+  <div class="tile">
+    <div class="label"><span class="chip chip-model"></span>SDM alone — P(avoid listing)</div>
+    <div class="value">${(scenario2.pM*100).toFixed(0)}%</div>
+    <div class="sub">${sgn(edgeM)} pts vs. expert</div>
+  </div>
+  <div class="tile">
+    <div class="label">SDM + expert combined</div>
+    <div class="value ${edgeC > 3 ? "pos" : ""}">${(scenario2.pC*100).toFixed(0)}%</div>
+    <div class="sub">${sgn(edgeC)} pts vs. expert · ceiling ${(scenario2.pCeil*100).toFixed(0)}%</div>
+  </div>
+</div>`
+}
+```
+
+```{ojs}
+//| echo: false
+verdict2 = {
+  const edgeM = (scenario2.pM - scenario2.pE) * 100;
+  const edgeC = (scenario2.pC - scenario2.pE) * 100;
+  let cls, msg;
+  if (edgeM >= 8) {
+    cls = "win";
+    msg = html`At AUC-PR <b>${prauc2.toFixed(2)}</b> the SDM beats even a god-like expert
+      by <b>${edgeM.toFixed(0)} points</b> of listing-avoidance (${(scenario2.pM*100).toFixed(0)}%
+      vs ${(scenario2.pE*100).toFixed(0)}%). Combining the two reaches
+      <b>${(scenario2.pC*100).toFixed(0)}%</b>, close to the ${(scenario2.pCeil*100).toFixed(0)}% ceiling.`;
+  } else if (edgeM >= -2) {
+    cls = "tie";
+    msg = html`At AUC-PR <b>${prauc2.toFixed(2)}</b> the SDM is <b>barely distinguishable</b> from a
+      god-like expert (${(scenario2.pM*100).toFixed(0)}% vs ${(scenario2.pE*100).toFixed(0)}%) —
+      both are pinned near the <b>${(scenario2.pCeil*100).toFixed(0)}% biological ceiling</b>.
+      The model's honest value shows up in the <b>combination</b>:
+      ${(scenario2.pC*100).toFixed(0)}% (${edgeC >= 0 ? "+" : ""}${edgeC.toFixed(0)} pts), because
+      model and botanist err independently. Against a real baseline, a good model earns a
+      few points — not a miracle.`;
+  } else {
+    cls = "lose";
+    msg = html`At AUC-PR <b>${prauc2.toFixed(2)}</b> the SDM is <b>worse than the expert</b>
+      (${(scenario2.pM*100).toFixed(0)}% vs ${(scenario2.pE*100).toFixed(0)}%) — a weak habitat
+      model trails seasoned judgment. Even here, blending the two (${(scenario2.pC*100).toFixed(0)}%)
+      claws back some ground. This is the finding DCA exists to surface: sometimes the model
+      shouldn't drive the decision at all.`;
+  }
+  return htl.html`<div class="verdict ${cls}">${msg}</div>`;
+}
+```
+
+<p style="font-size:0.85rem;color:#898781">
+Built with <a href="https://quarto.org">Quarto</a> + Observable JS — everything runs
+in your browser, nothing is sent anywhere. Source:
+<a href="https://github.com/sagesteppe/CDA4Dummies">github.com/sagesteppe/CDA4Dummies</a>.
+</p>
