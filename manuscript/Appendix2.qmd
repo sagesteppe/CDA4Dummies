@@ -43,15 +43,15 @@ is_ref <- grepl("treat", curves$strategy)
 p_aoa <- ggplot(mapping = aes(pt, nb, colour = strategy)) +
   geom_line(data = curves[is_ref],  aes(linetype = strategy), linewidth = 1.0) +
   geom_line(data = curves[!is_ref], linewidth = 0.9) +
-  scale_colour_manual(values = c("SDM — naive (full hold-out)" = "#e8963a", "SDM — AOA-honest (in-domain)" = "#2a78d6",
-                                 "Survey all (treat-all)" = "#d1495b", "Survey none (treat-none)" = "grey45"), name = NULL) +
-  scale_linetype_manual(values = c("Survey all (treat-all)" = "12", "Survey none (treat-none)" = "solid"), guide = "none") +
+  scale_colour_manual(values = c("SDM — naive (full hold-out)" = cda_cols[["orange"]], "SDM — AOA-honest (in-domain)" = cda_cols[["blue"]],
+                                 "Survey all (treat-all)" = cda_cols[["red"]], "Survey none (treat-none)" = cda_cols[["grey"]]), name = NULL) +
+  scale_linetype_reference() +
   scale_x_continuous(labels = scales::percent) +
   coord_cartesian(ylim = c(-0.03, PI * 1.08)) +
   labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
        title = sprintf("The AOA downgrade: naive vs in-domain decision curve (prevalence %.1f%%)", 100 * PI),
        subtitle = "Both curves at the same prevalence; the gap is the inflation from trivially rejecting easy absences.") +
-  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+  theme_cda()
 ggsave(file.path(HERE, "figures", "dca_aoa_inflation.png"), p_aoa, width = 9, height = 5, dpi = 150)
 
 ## ensemble ROC-AUC (prevalence-invariant), full vs in-domain

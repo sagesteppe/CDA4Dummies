@@ -48,8 +48,6 @@ ul.task-list li input[type="checkbox"] {
    
   <ul class="collapse">
   <li><a href="#baseline-decision-curve" id="toc-baseline-decision-curve" class="nav-link active" data-scroll-target="#baseline-decision-curve">Baseline decision curve</a></li>
-  <li><a href="#case-study-pixel-formulation" id="toc-case-study-pixel-formulation" class="nav-link" data-scroll-target="#case-study-pixel-formulation">Case study: pixel formulation</a></li>
-  <li><a href="#pr-auc-prevalence-correction" id="toc-pr-auc-prevalence-correction" class="nav-link" data-scroll-target="#pr-auc-prevalence-correction">PR-AUC prevalence correction</a></li>
   </ul>
 </nav>
 </div>
@@ -80,7 +78,7 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<p>The three analyses behind the main-text figures, in one place. Code is hidden; each chunk regenerates its figure (and any data artifact) under <code>figures/</code> and <code>data/</code>.</p>
+<p>The analysis behind the main-text decision-curve figure, in one place. Code is hidden; the chunk regenerates its figure under <code>figures/</code>.</p>
 <section id="baseline-decision-curve" class="level2">
 <h2 class="anchored" data-anchor-id="baseline-decision-curve">Baseline decision curve</h2>
 <p>One SDM at a fixed landscape prevalence, the standard way (the <code>dcurves</code> package, so the canonical treat-all / treat-none references come along), with the summary-metric route (a binormal ROC fit to the model’s reported PR-AUC) overlaid on the exact per-point curve.</p>
@@ -98,43 +96,6 @@ Figure&nbsp;1: Decision curve for one SDM (1:30 P:A, hold-out prevalence ~3.3%) 
 </div>
 </div>
 </div>
-</section>
-<section id="case-study-pixel-formulation" class="level2">
-<h2 class="anchored" data-anchor-id="case-study-pixel-formulation">Case study: pixel formulation</h2>
-<p>A classic decision curve from the real <em>E. coloradense</em> ground-truth predictions, treating each ground-truth point as an independent decision unit, faceted by AOA domain. The model curve is the median across raw models; every point is reweighted to a 5% target landscape prevalence.</p>
-<div class="cell" data-layout-align="center">
-<div class="cell-output-display">
-<div id="fig-casestudy-pixel" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-casestudy-pixel-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="analyses_files/figure-html/fig-casestudy-pixel-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="1050">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-casestudy-pixel-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;2: Pixel-formulation decision curves at 5% landscape prevalence, faceted by AOA domain. Where the SDM curve sits above both references it adds net benefit over surveying everything or nothing.
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</section>
-<section id="pr-auc-prevalence-correction" class="level2">
-<h2 class="anchored" data-anchor-id="pr-auc-prevalence-correction">PR-AUC prevalence correction</h2>
-<p>Average precision (PR-AUC) is prevalence-dependent, so a reported number must be re-priced to the target landscape prevalence. Two routes: exact per-point reweighting when the held-out predictions are available, versus reconstructing the curve from a scalar PR-AUC through a binormal ROC. The figure shows where the cheap summary route departs from the exact one.</p>
-<div class="cell" data-layout-align="center">
-<div class="cell-output-display">
-<div id="fig-pr-summary-vs-perpoint" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-pr-summary-vs-perpoint-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="analyses_files/figure-html/fig-pr-summary-vs-perpoint-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="1050">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-pr-summary-vs-perpoint-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3: Exact per-point vs reconstructed precision-recall curve for the example model at 2.5% landscape prevalence. The summary route undershoots in the high-precision, low-recall region a survey actually operates in.
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-<p>At the 2.5% target the exact per-point PR-AUC is 0.28 (a 11.3× lift over the no-skill baseline), while reconstructing it from the reported scalar through a binormal ROC gives 0.17 — undershooting by 41%. Correcting the reported test-holdout PR-AUC (0.836 at ~49% design prevalence) to the same target a priori yields 0.19 (implied ROC-AUC 0.84).</p>
 </section>
 
 </main>

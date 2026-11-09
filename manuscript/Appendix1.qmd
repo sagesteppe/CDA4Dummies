@@ -59,13 +59,13 @@ spear_cox <- cor(res$cox_intercept, res$gap_mean, use = "complete.obs", method =
 plot_gap <- function(xvar, xlab) {
   ggplot(res, aes(.data[[xvar]], gap_mean, size = n)) +
     geom_hline(yintercept = 0, colour = "grey60") +
-    geom_point(alpha = 0.5, colour = "#2a78d6") +
-    geom_smooth(aes(weight = n), method = "loess", se = TRUE, colour = "#d1495b", linewidth = 0.7, show.legend = FALSE) +
+    geom_point(alpha = 0.5, colour = cda_cols[["blue"]]) +
+    geom_smooth(aes(weight = n), method = "loess", se = TRUE, colour = cda_cols[["red"]], linewidth = 0.7, show.legend = FALSE) +
     scale_size_area(max_size = 4) +
     labs(x = xlab, y = "Mean net-benefit gap  (summary - exact)",
          title = sprintf("Summary-vs-exact decision-curve gap at %.1f%% prevalence", 100 * PI),
          subtitle = "Exploratory, one point per hold-out model; point size = hold-out n. Above 0 = summary route optimistic.") +
-    theme_bw(base_size = 11)
+    theme_cda()
 }
 p_ratio <- plot_gap("pa_ratio", "Training P:A ratio (1 : x)") + scale_x_log10()
 p_cox   <- plot_gap("cox_intercept", "Hold-out cox calibration intercept (0 = calibrated-in-the-large)")
@@ -133,7 +133,7 @@ p_target <- ggplot(agg, aes(target_prev, gap, colour = nat_prev, group = pa_rati
   labs(x = "Target landscape prevalence", y = "Median net-benefit gap (summary - exact)",
        title = "Each P:A ratio's gap bottoms out at its own evaluation prevalence",
        subtitle = "Dots = each ratio's natural prevalence 1/(1+ratio). Above 0 = summary route optimistic.") +
-  theme_bw(base_size = 11)
+  theme_cda()
 ggsave(file.path(HERE, "figures", "gap_vs_target_prevalence.png"), p_target, width = 8, height = 5, dpi = 150)
 
 ## Fig B: strong form -- rescale x to target / natural prevalence; curves collapse, cross 0 at 1
@@ -145,7 +145,7 @@ p_collapse <- ggplot(agg, aes(target_prev / nat_prev, gap, colour = nat_prev, gr
   labs(x = "Target prevalence / evaluation prevalence", y = "Median net-benefit gap (summary - exact)",
        title = "Collapse test: the gap is a function of target / evaluation prevalence",
        subtitle = "If the mechanism holds, every ratio falls on one curve crossing 0 at x = 1 (dotted).") +
-  theme_bw(base_size = 11)
+  theme_cda()
 ggsave(file.path(HERE, "figures", "gap_collapse_test.png"), p_collapse, width = 8, height = 5, dpi = 150)
 ```
 
