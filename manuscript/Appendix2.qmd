@@ -3,13 +3,74 @@ title: "Appendix 2 — The applicability downgrade: easy absences inflate report
 date: last-modified
 ---
 
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 150)
+suppressPackageStartupMessages({library(data.table); library(ggplot2)})
+HERE <- ".."                                      # this .qmd lives in manuscript/; repo root is ..
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
+```
+
 **Question.** A reported PR-AUC or ROC-AUC summarises a model over its whole test set. But does that number describe the decision a practitioner actually faces — distinguishing occupied sites from the *hard*, environmentally-similar sites they might otherwise survey?
 
 **Experiment.** We computed the Area of Applicability from the **training presences only** (pseudo-absences conflate the dissimilarity index) and labelled every hold-out point interpolation (`DI ≤ DI_thresh`) or extrapolation (`DI > DI_thresh`). This split is nearly collinear with the outcome: presences and a few hard absences fall in-domain, while the great majority of absences — environmentally distant from any occurrence — fall out-of-domain. We then scored each model two ways: *naive*, on the full hold-out, and *AOA-honest*, on the in-domain points only, reweighting both to the same prevalence so the only difference is which absences are in play. Performance was compared with ROC-AUC (prevalence-invariant) across all spatial-mapping models.
 
-**Result.** Restricting to the in-domain region — where the model must separate presences from absences that *resemble* occupied habitat — lowers measured skill in **100% of 128 models** (median ROC-AUC 0.96 → 0.76). The headline number is inflated by free credit for trivially rejecting the easy, far-from-suitable extrapolation absences (the "AUC inflated by easy absences" critique). In decision terms the effect is stark: the naive curve looks uniformly excellent, while the honest curve loses all value beyond a threshold of ~10%.
+```{r aoa-downgrade}
+#| include: false
+## A priori AOA downgrade: naive curve (whole hold-out) vs AOA-honest curve (in-domain points
+## only — presences vs the HARD, environmentally-similar absences). Both reweighted to the SAME
+## prevalence, so the gap is purely the inflation from trivially rejecting easy, far-from-suitable
+## extrapolation absences. No ground truth used (hold-out predictions + presences-only DI).
+EX <- "1arc-Iteration1-PA1:30DO:0-Seed5101"
+PI <- 0.05                                        # in-AOA landscape prevalence (both curves)
 
-![Naive vs AOA-honest decision curve for the example model, both at 5% prevalence. The two agree only at the broadest thresholds; the gap is the inflation contributed by easy absences, and the in-domain curve drops below "survey none" well before the "survey five to find one" tolerance.](../figures/dca_aoa_inflation.png){#fig-aoa-inflation}
+p <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))[calibration == "raw" & design == "spatial_mapping"]
+a <- fread(file.path(HERE, "data", "holdout_point_aoa.csv"))
+m <- merge(p, a[, .(model, point_id, DI, DI_thresh)], by = c("model", "point_id")); m[, extrap := DI > DI_thresh]
+
+e <- m[model == EX]; ind <- e[extrap == FALSE]
+pt <- seq(0.001, 0.25, by = 0.002)
+curves <- rbind(
+  data.table(pt = pt, nb = nb_exact(e$Presence,   e$prob,   PI, pt), strategy = "SDM — naive (full hold-out)"),
+  data.table(pt = pt, nb = nb_exact(ind$Presence, ind$prob, PI, pt), strategy = "SDM — AOA-honest (in-domain)"),
+  data.table(pt = pt, nb = nb_treat_all(PI, pt),                     strategy = "Survey all (treat-all)"),
+  data.table(pt = pt, nb = 0,                                        strategy = "Survey none (treat-none)"))
+lv <- c("SDM — naive (full hold-out)", "SDM — AOA-honest (in-domain)", "Survey all (treat-all)", "Survey none (treat-none)")
+curves[, strategy := factor(strategy, levels = lv)]
+is_ref <- grepl("treat", curves$strategy)
+
+p_aoa <- ggplot(mapping = aes(pt, nb, colour = strategy)) +
+  geom_line(data = curves[is_ref],  aes(linetype = strategy), linewidth = 1.0) +
+  geom_line(data = curves[!is_ref], linewidth = 0.9) +
+  scale_colour_manual(values = c("SDM — naive (full hold-out)" = "#e8963a", "SDM — AOA-honest (in-domain)" = "#2a78d6",
+                                 "Survey all (treat-all)" = "#d1495b", "Survey none (treat-none)" = "grey45"), name = NULL) +
+  scale_linetype_manual(values = c("Survey all (treat-all)" = "12", "Survey none (treat-none)" = "solid"), guide = "none") +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(ylim = c(-0.03, PI * 1.08)) +
+  labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
+       title = sprintf("The AOA downgrade: naive vs in-domain decision curve (prevalence %.1f%%)", 100 * PI),
+       subtitle = "Both curves at the same prevalence; the gap is the inflation from trivially rejecting easy absences.") +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+ggsave(file.path(HERE, "figures", "dca_aoa_inflation.png"), p_aoa, width = 9, height = 5, dpi = 150)
+
+## ensemble ROC-AUC (prevalence-invariant), full vs in-domain
+ens <- m[, .(roc_full = roc_auc(Presence, prob), roc_in = roc_auc(Presence[!extrap], prob[!extrap])), by = model]
+fwrite(ens, file.path(HERE, "data", "aoa_roc_drop_by_model.csv"))
+
+n_models <- nrow(ens)
+pct_drop <- 100 * mean(ens$roc_in < ens$roc_full, na.rm = TRUE)
+med_full <- median(ens$roc_full, na.rm = TRUE)
+med_in   <- median(ens$roc_in,   na.rm = TRUE)
+```
+
+**Result.** Restricting to the in-domain region — where the model must separate presences from absences that *resemble* occupied habitat — lowers measured skill in **`r sprintf("%.0f%%", pct_drop)` of `r n_models` models** (median ROC-AUC `r sprintf("%.2f", med_full)` → `r sprintf("%.2f", med_in)`). The headline number is inflated by free credit for trivially rejecting the easy, far-from-suitable extrapolation absences (the "AUC inflated by easy absences" critique). In decision terms the effect is stark: the naive curve looks uniformly excellent, while the honest curve loses all value beyond a threshold of ~10%.
+
+```{r}
+#| label: fig-aoa-inflation
+#| fig-cap: "Naive vs AOA-honest decision curve for the example model, both at 5% prevalence. The two agree only at the broadest thresholds; the gap is the inflation contributed by easy absences, and the in-domain curve drops below \"survey none\" well before the \"survey five to find one\" tolerance."
+p_aoa
+```
 
 **Isolating it from ground truth.** This downgrade uses only the hold-out predictions and the presences-only dissimilarity index — no field data — so it is an *a priori*, quantified penalty, and it is orthogonal to the prevalence correction of Appendix 1 (that sets the baseline; this measures discrimination among the hard cases). What it cannot reach is the *other* edge: the hold-out contains almost no points in genuinely novel, high-suitability environments, so it cannot characterise dangerous extrapolation. As expected, models perform poorly when extrapolating beyond their training space — but quantifying *that* collapse is an a posteriori, ground-truth question, not something the hold-out can answer.
 

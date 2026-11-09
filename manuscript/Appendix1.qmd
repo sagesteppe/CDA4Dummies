@@ -3,14 +3,156 @@ title: "Appendix 1 — When the summary route reproduces the per-point curve"
 date: last-modified
 ---
 
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 150)
+suppressPackageStartupMessages({library(data.table); library(dplyr); library(ggplot2)})
+HERE <- ".."                                      # this .qmd lives in manuscript/; repo root is ..
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
+```
+
 **Question.** The summary route (reconstruct a decision curve from a model's reported PR-AUC via a binormal ROC) is cheap but assumes a curve shape; the per-point route (reweight the held-out predictions to the target prevalence) is exact but needs the raw predictions. When do they agree?
 
 **Experiment.** For 128 spatial-mapping SDMs of *E. coloradense* spanning presence:absence design ratios from 1:1 to 1:30, we computed both decision curves at a target landscape prevalence and recorded their difference, `gap = net benefit (summary) − net benefit (exact)`, averaged over a prevalence-relative threshold window. We then (i) held the target at 2.5% and varied the P:A ratio, and (ii) swept the target prevalence from 1% to 50%. Each model's binormal was anchored to its own reported PR-AUC at its evaluation prevalence; the gap is a median across replicate seeds.
 
-**Result.** The gap is governed by the distance between a model's *evaluation* prevalence (set by its P:A ratio, natural prevalence $1/(1+\text{ratio})$) and the *target* prevalence — not by the model's calibration (hold-out cox intercept is unrelated, Spearman $\approx 0.17$).
+```{r ratio-sweep}
+#| include: false
+## (i) Fixed 2.5% target, gap vs P:A ratio and vs hold-out calibration.
+## Per hold-out model (raw, classic excluded), at the landscape prevalence PI:
+##   nb_exact()    -- net benefit thresholding the RAW probs, reweighted to PI (per-point,
+##                    calibration-DEPENDENT: uses the model's actual cutoffs).
+##   nb_binormal() -- net benefit from a binormal ROC fit to the model's PR-AUC, read at the
+##                    ROC point whose slope matches the cost ratio (summary, calibration-
+##                    INDEPENDENT best-achievable NB for that ROC).
+## gap = summary - exact has two sources: (a) binormal shape, (b) raw-prob vs optimal cutoffs;
+## (b) is why hold-out cox calibration is the natural covariate to test (not a claim).
+PI   <- 0.025
+PT   <- seq(0.005, 0.25, by = 0.005)              # decision-relevant threshold range for the gap
+GRID <- 3000                                      # binormal integration grid
 
-![At a fixed 2.5% target, the summary route is optimistically biased for models evaluated at balanced ratios and converges on the exact curve as the design ratio approaches landscape rarity.](../figures/sweep_gap_vs_ratio.png){#fig-gap-ratio}
+d <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))
+d <- d[calibration == "raw" & design == "spatial_mapping"]
+d <- d[!(seed %in% c(5001, 5002, 5003))]          # drop the 3-seed replicate; keep 5101-5801 reps
+d[, pa_ratio := as.numeric(sub(".*PA1:([0-9.]+)DO.*", "\\1", model))]
 
-![Sweeping the target prevalence, every ratio's gap bottoms out where the target equals that ratio's own evaluation prevalence (dots). Flip the target to 50% and balanced models thrive while rare-tuned models suffer — the mirror of the 2.5% case.](../figures/gap_vs_target_prevalence.png){#fig-gap-target}
+res <- d[, {
+  if (uniqueN(Presence) < 2 || .N < 30) .SD[0]              # need both classes and a usable n
+  else {
+    pih <- mean(Presence); pr <- ap_pointwise(Presence, prob, pih)
+    mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih, grid = GRID) - pr, c(1e-3, 8))$root,
+                    error = function(e) NA_real_)
+    gap <- if (is.na(mu)) rep(NA_real_, length(PT)) else nb_binormal(mu, PI, PT) - nb_exact(Presence, prob, PI, PT)
+    cc  <- cox_calibration(Presence, prob)
+    data.table(design = design[1], resolution = resolution[1], pa_ratio = pa_ratio[1],
+               n = .N, prev_holdout = pih, pr_auc = pr, mu = mu,
+               cox_intercept = cc[["cox_intercept"]], cox_slope = cc[["cox_slope"]],
+               gap_mean = mean(gap), gap_absmean = mean(abs(gap)))   # gap = binormal - exact
+  }
+}, by = model]
+fwrite(res, file.path(HERE, "data", "binormal_vs_exact_sweep.csv"))
+
+n_models <- nrow(res)
+spear_cox <- cor(res$cox_intercept, res$gap_mean, use = "complete.obs", method = "spearman")
+
+## exploratory views: does the (signed) gap track P:A ratio or hold-out calibration?
+plot_gap <- function(xvar, xlab) {
+  ggplot(res, aes(.data[[xvar]], gap_mean, size = n)) +
+    geom_hline(yintercept = 0, colour = "grey60") +
+    geom_point(alpha = 0.5, colour = "#2a78d6") +
+    geom_smooth(aes(weight = n), method = "loess", se = TRUE, colour = "#d1495b", linewidth = 0.7, show.legend = FALSE) +
+    scale_size_area(max_size = 4) +
+    labs(x = xlab, y = "Mean net-benefit gap  (summary - exact)",
+         title = sprintf("Summary-vs-exact decision-curve gap at %.1f%% prevalence", 100 * PI),
+         subtitle = "Exploratory, one point per hold-out model; point size = hold-out n. Above 0 = summary route optimistic.") +
+    theme_bw(base_size = 11)
+}
+p_ratio <- plot_gap("pa_ratio", "Training P:A ratio (1 : x)") + scale_x_log10()
+p_cox   <- plot_gap("cox_intercept", "Hold-out cox calibration intercept (0 = calibrated-in-the-large)")
+ggsave(file.path(HERE, "figures", "sweep_gap_vs_ratio.png"), p_ratio, width = 7, height = 5, dpi = 150)
+ggsave(file.path(HERE, "figures", "sweep_gap_vs_cox.png"),   p_cox,   width = 7, height = 5, dpi = 150)
+```
+
+**Result.** The gap is governed by the distance between a model's *evaluation* prevalence (set by its P:A ratio, natural prevalence $1/(1+\text{ratio})$) and the *target* prevalence — not by the model's calibration (hold-out cox intercept is unrelated, Spearman $\approx `r sprintf("%.2f", spear_cox)`$).
+
+```{r}
+#| label: fig-gap-ratio
+#| fig-cap: "At a fixed 2.5% target, the summary route is optimistically biased for models evaluated at balanced ratios and converges on the exact curve as the design ratio approaches landscape rarity."
+p_ratio
+```
+
+```{r target-sweep}
+#| include: false
+## (ii) Falsification test: sweep the TARGET prevalence; each P:A ratio's gap should bottom out
+## where the target equals that ratio's natural evaluation prevalence 1/(1+ratio). Strong form:
+## rescale x to target / natural prevalence and every ratio collapses onto one curve crossing 0 at 1.
+GRID <- 3000
+
+## mean gap over a prevalence-RELATIVE threshold window (same relative tolerance at every target)
+mean_gap <- function(truth, prob, mu, pi_target) {
+  pt <- pmin(pi_target * seq(0.25, 10, by = 0.25), 0.95)
+  mean(nb_binormal(mu, pi_target, pt) - nb_exact(truth, prob, pi_target, pt))
+}
+
+g <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))
+g <- g[calibration == "raw" & design == "spatial_mapping"]
+g <- g[!(seed %in% c(5001, 5002, 5003))]
+g[, pa_ratio := round(as.numeric(sub(".*PA1:([0-9.]+)DO.*", "\\1", model)))]  # collapse ~1:1 cluster to 1
+
+## fit mu once per model (anchored at its own evaluation prevalence + PR-AUC)
+mods <- g[, {
+  if (uniqueN(Presence) < 2 || .N < 30) .SD[0] else {
+    pih <- mean(Presence); pr <- ap_pointwise(Presence, prob, pih)
+    mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih, grid = GRID) - pr, c(1e-3, 8))$root, error = function(e) NA_real_)
+    .(pa_ratio = pa_ratio[1], eval_prev = pih, mu = mu)
+  }
+}, by = model]
+pt_list <- split(g[, .(Presence, prob)], g$model)
+
+targets <- 10^seq(log10(0.01), log10(0.50), length.out = 13)
+long <- rbindlist(lapply(seq_len(nrow(mods)), function(i) {
+  mm <- mods[i]; if (is.na(mm$mu)) return(NULL)
+  pp <- pt_list[[mm$model]]
+  data.table(model = mm$model, pa_ratio = mm$pa_ratio, eval_prev = mm$eval_prev,
+             target_prev = targets,
+             gap = vapply(targets, function(tp) mean_gap(pp$Presence, pp$prob, mm$mu, tp), numeric(1)))
+}))
+long[, nat_prev := 1 / (1 + pa_ratio)]
+agg <- long[, .(gap = median(gap), n = .N), by = .(pa_ratio, nat_prev, target_prev)]
+fwrite(agg, file.path(HERE, "data", "gap_vs_target_prevalence.csv"))
+
+## Fig A: gap vs target prevalence, one line per ratio; dots mark each ratio's natural prevalence
+markA <- long[, .(target_prev = nat_prev[1], gap = median(gap[which.min(abs(target_prev - nat_prev))])),
+              by = pa_ratio]
+p_target <- ggplot(agg, aes(target_prev, gap, colour = nat_prev, group = pa_ratio)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(linewidth = 0.6) +
+  geom_point(data = markA, aes(target_prev, gap), colour = "black", size = 1.3, inherit.aes = FALSE) +
+  scale_x_log10(labels = scales::percent) +
+  scale_colour_viridis_c(name = "natural\nprevalence", trans = "log", breaks = c(0.02, 0.05, 0.1, 0.25, 0.5)) +
+  labs(x = "Target landscape prevalence", y = "Median net-benefit gap (summary - exact)",
+       title = "Each P:A ratio's gap bottoms out at its own evaluation prevalence",
+       subtitle = "Dots = each ratio's natural prevalence 1/(1+ratio). Above 0 = summary route optimistic.") +
+  theme_bw(base_size = 11)
+ggsave(file.path(HERE, "figures", "gap_vs_target_prevalence.png"), p_target, width = 8, height = 5, dpi = 150)
+
+## Fig B: strong form -- rescale x to target / natural prevalence; curves collapse, cross 0 at 1
+p_collapse <- ggplot(agg, aes(target_prev / nat_prev, gap, colour = nat_prev, group = pa_ratio)) +
+  geom_hline(yintercept = 0, colour = "grey60") + geom_vline(xintercept = 1, linetype = "dotted", colour = "grey55") +
+  geom_line(linewidth = 0.6) +
+  scale_x_log10() +
+  scale_colour_viridis_c(name = "natural\nprevalence", trans = "log", breaks = c(0.02, 0.05, 0.1, 0.25, 0.5)) +
+  labs(x = "Target prevalence / evaluation prevalence", y = "Median net-benefit gap (summary - exact)",
+       title = "Collapse test: the gap is a function of target / evaluation prevalence",
+       subtitle = "If the mechanism holds, every ratio falls on one curve crossing 0 at x = 1 (dotted).") +
+  theme_bw(base_size = 11)
+ggsave(file.path(HERE, "figures", "gap_collapse_test.png"), p_collapse, width = 8, height = 5, dpi = 150)
+```
+
+```{r}
+#| label: fig-gap-target
+#| fig-cap: "Sweeping the target prevalence, every ratio's gap bottoms out where the target equals that ratio's own evaluation prevalence (dots). Flip the target to 50% and balanced models thrive while rare-tuned models suffer — the mirror of the 2.5% case."
+p_target
+```
 
 **Implication.** Use the summary route when a model's reported P:A ratio sits near the landscape prevalence of interest; otherwise the reported number is being read at the wrong prevalence, and the per-point route is worth the extra data. This is a property of *where the model was scored*, not of how good it is.

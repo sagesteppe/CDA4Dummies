@@ -1,0 +1,250 @@
+---
+title: "Analyses — figures and tables for the main text"
+date: last-modified
+---
+
+The three analyses behind the main-text figures, in one place. Code is hidden; each
+chunk regenerates its figure (and any data artifact) under `figures/` and `data/`.
+
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 150)
+suppressPackageStartupMessages({library(dcurves); library(tidyverse); library(data.table)})
+HERE <- ".."                                      # this .qmd lives in manuscript/; repo root is ..
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
+```
+
+## Baseline decision curve
+
+One SDM at a fixed landscape prevalence, the standard way (the `dcurves` package, so the
+canonical treat-all / treat-none references come along), with the summary-metric route (a
+binormal ROC fit to the model's reported PR-AUC) overlaid on the exact per-point curve.
+
+```{r baseline}
+#| include: false
+## The hold-out sample is enriched (~0.52 presence), so we pass the landscape prevalence via
+## dca()'s `prevalence=` (its case-control adjustment) rather than reweighting by hand.
+PI   <- 0.025
+EX   <- "1arc-Iteration1-PA1:30DO:0-Seed5101"   # spatial-mapping, 1:30 P:A (hold-out prev ~3.3%)
+
+h <- read.csv(file.path(HERE, "data", "holdout_point_predictions.csv")) |>
+  filter(model == EX, calibration == "raw", design == "spatial_mapping")
+
+PT_MARK <- 0.20                                   # "happy to survey 5 sites to find 1" -> p_t = 1/5
+PT_GRID <- seq(0.001, 0.50, by = 0.005)
+d <- dca(Presence ~ prob, data = h, prevalence = PI,
+         thresholds = PT_GRID,                     # run high so the SDM decay is visible (illustrative)
+         label = list(prob = "SDM"))
+
+## SUMMARY-METRIC route: fit an equal-variance binormal ROC (mu) reproducing the model's PR-AUC at
+## its design prevalence, then read net benefit at the ROC point whose slope equals the cost ratio.
+## ap_pointwise(), ap_binormal(), nb_binormal(): see R/fn_average_precision.R, R/fn_net_benefit.R
+pi_hold  <- mean(h$Presence)
+pr_hold  <- ap_pointwise(h$Presence, h$prob, pi_hold)      # the number a paper would report
+mu_fit   <- uniroot(function(m) ap_binormal(m, pi_hold) - pr_hold, c(1e-3, 8))$root
+nb_bin   <- nb_binormal(mu_fit, PI, PT_GRID)               # best-achievable NB from the fitted ROC
+
+lv <- c("SDM (per-point, exact)", "SDM (summary, binormal)",
+        "Survey all (treat-all)", "Survey none (treat-none)")
+nb <- as_tibble(d) |>
+  transmute(strategy = recode(as.character(label),
+                              "Treat All" = "Survey all (treat-all)",
+                              "Treat None" = "Survey none (treat-none)",
+                              "SDM" = "SDM (per-point, exact)"),
+            threshold, net_benefit) |>
+  bind_rows(tibble(strategy = "SDM (summary, binormal)",
+                   threshold = PT_GRID, net_benefit = nb_bin)) |>
+  mutate(strategy = factor(strategy, levels = lv))
+is_ref  <- grepl("treat", nb$strategy)
+nb_mark <- nb$net_benefit[nb$strategy == "SDM (per-point, exact)"][
+             which.min(abs(nb$threshold[nb$strategy == "SDM (per-point, exact)"] - PT_MARK))]
+
+p_baseline <- ggplot(mapping = aes(threshold, net_benefit, colour = strategy)) +
+  geom_vline(xintercept = PT_MARK, colour = "grey55", linetype = "dotted") +
+  annotate("text", x = PT_MARK, y = PI * 1.08, hjust = -0.04, size = 3, colour = "grey35",
+           label = sprintf("p[t]==0.20~': survey 5 to find 1'"), parse = TRUE) +
+  annotate("point", x = PT_MARK, y = nb_mark, colour = "#2a78d6", size = 2) +
+  geom_line(data = nb[is_ref, ], aes(linetype = strategy), linewidth = 1.1) +
+  geom_line(data = nb[!is_ref, ], linewidth = 0.8) +
+  scale_colour_manual(values = c("SDM (per-point, exact)" = "#2a78d6",
+                                 "SDM (summary, binormal)" = "#e8963a",
+                                 "Survey all (treat-all)" = "#d1495b",
+                                 "Survey none (treat-none)" = "grey45"), name = NULL) +
+  scale_linetype_manual(values = c("Survey all (treat-all)" = "12",
+                                   "Survey none (treat-none)" = "solid"), guide = "none") +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(ylim = c(-0.02, PI * 1.12)) +    # clip the deep treat-all tail, keep its zero-crossing
+  labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
+       title = sprintf("Decision curve for one SDM at %.1f%% landscape prevalence", 100 * PI),
+       subtitle = "Per-point (raw predictions) vs the summary route (binormal from reported PR-AUC).") +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+
+ggsave(file.path(HERE, "figures", "dca_baseline_dcurves.png"), p_baseline, width = 9, height = 5, dpi = 150)
+```
+
+```{r}
+#| label: fig-baseline-dca
+#| fig-cap: "Decision curve for one SDM (1:30 P:A, hold-out prevalence ~3.3%) at 2.5% landscape prevalence. The per-point and summary-metric routes track closely for this model; the marked point is the net benefit at the \"survey five to find one\" threshold."
+p_baseline
+```
+
+## Case study: pixel formulation
+
+A classic decision curve from the real *E. coloradense* ground-truth predictions, treating each
+ground-truth point as an independent decision unit, faceted by AOA domain. The model curve is the
+median across raw models; every point is reweighted to a 5% target landscape prevalence.
+
+```{r pixel}
+#| include: false
+PI <- 0.05                                # target landscape prevalence
+d <- read.csv(file.path(HERE, "data", "groundtruth_point_predictions.csv"))
+d <- d[d$calibration == "raw", ]
+d$domain <- factor(d$domain, levels = c("Interp <=270m", "Interp >270m", "Extrapolation"))
+
+pt_grid <- seq(0.005, 0.15, by = 0.0025) # decision-relevant thresholds (rare-species survey)
+
+## model curves: prevalence-reweighted net benefit nb_exact() per (domain, model), median across models
+model_cells <- d |> group_by(domain, design, model) |> group_split()
+model_nb <- map_dfr(model_cells, function(cc) {
+  if (length(unique(cc$Presence)) < 2 || nrow(cc) < 8) return(NULL)
+  tibble(domain = cc$domain[1], model = cc$model[1],
+         pt = pt_grid, nb = nb_exact(cc$Presence, cc$prob, PI, pt_grid))
+})
+model_curve <- model_nb |>
+  group_by(domain, pt) |>
+  summarise(net_benefit = median(nb), n_models = n_distinct(model), .groups = "drop") |>
+  mutate(strategy = "SDM (pixel)")
+
+## reference strategies at the target landscape prevalence PI (same in every domain)
+ref_curve <- tibble(pt = pt_grid) |>
+  mutate(treat_all  = nb_treat_all(PI, pt),
+         treat_none = 0) |>
+  crossing(domain = levels(d$domain)) |>
+  mutate(domain = factor(domain, levels = levels(d$domain))) |>
+  pivot_longer(c(treat_all, treat_none), names_to = "strategy", values_to = "net_benefit") |>
+  mutate(strategy = recode(strategy, treat_all = "Survey all (treat-all)",
+                           treat_none = "Survey none (treat-none)")) |>
+  select(domain, pt, strategy, net_benefit)
+
+curves <- bind_rows(
+  model_curve |> select(domain, pt, strategy, net_benefit),
+  ref_curve
+) |>
+  mutate(strategy = factor(strategy, levels = c(
+    "SDM (pixel)", "Survey all (treat-all)", "Survey none (treat-none)")))
+write.csv(curves, file.path(HERE, "data", "dca_casestudy_pixel.csv"), row.names = FALSE)
+
+pal <- c("SDM (pixel)" = "#2a78d6",
+         "Survey all (treat-all)" = "#d1495b",
+         "Survey none (treat-none)" = "grey45")
+is_ref <- curves$strategy != "SDM (pixel)"
+p_pixel <- ggplot(mapping = aes(pt, net_benefit, colour = strategy)) +
+  ## bold-dashed references underneath a thinner SDM line, so where the SDM coincides with
+  ## treat-all (in-domain, low thresholds) the red dashes still show through
+  geom_line(data = curves[is_ref, ], aes(linetype = strategy), linewidth = 1.1) +
+  geom_line(data = curves[!is_ref, ], linewidth = 0.6) +
+  facet_wrap(~domain) +
+  scale_linetype_manual(values = c("Survey all (treat-all)" = "12",
+                                   "Survey none (treat-none)" = "solid"), guide = "none") +
+  scale_colour_manual(values = pal, name = NULL) +
+  coord_cartesian(ylim = c(-0.02, PI * 1.05)) +
+  labs(x = expression("Threshold probability  " * p[t]),
+       y = "Net benefit",
+       title = sprintf("Pixel formulation at %.0f%% landscape prevalence, by AOA domain", 100 * PI),
+       subtitle = "Each ground-truth point is one decision unit. Curve above both references = the model adds net benefit.") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom")
+
+ggsave(file.path(HERE, "figures", "dca_casestudy_pixel.png"), p_pixel, width = 10, height = 4.2, dpi = 150)
+```
+
+```{r}
+#| label: fig-casestudy-pixel
+#| fig-cap: "Pixel-formulation decision curves at 5% landscape prevalence, faceted by AOA domain. Where the SDM curve sits above both references it adds net benefit over surveying everything or nothing."
+p_pixel
+```
+
+## PR-AUC prevalence correction
+
+Average precision (PR-AUC) is prevalence-dependent, so a reported number must be re-priced to the
+target landscape prevalence. Two routes: exact per-point reweighting when the held-out predictions
+are available, versus reconstructing the curve from a scalar PR-AUC through a binormal ROC. The
+figure shows where the cheap summary route departs from the exact one.
+
+```{r pr-auc}
+#| include: false
+PI   <- 0.025                                   # target landscape prevalence for this portion
+GRID <- 20000                                   # fine binormal grid for this a-priori portion
+
+## (A) exact per-point AP, case-weighted to prevalence pi, on the 2026 ground-truth points
+pts <- read.csv(file.path(HERE, "data", "example_model", "groundtruth_points.csv"))
+pts <- pts[pts$calibration == "raw", ]
+pts$domain <- ifelse(pts$SurfaceArea == "Extrapolation", "Extrapolation",
+               ifelse(pts$Distance == "<=270m", "Interp <=270m", "Interp >270m"))
+pts$domain <- factor(pts$domain, levels = c("Interp <=270m", "Interp >270m", "Extrapolation"))
+realized <- pts |>
+  group_by(domain) |>
+  summarise(n = n(), sample_prev = mean(Presence),
+            pr_auc_sample = ap_pointwise(Presence, prob, mean(Presence)),
+            pr_auc_landscape = ap_pointwise(Presence, prob, PI), .groups = "drop") |>
+  bind_rows(tibble(domain = "ALL", n = nrow(pts), sample_prev = mean(pts$Presence),
+                   pr_auc_sample = ap_pointwise(pts$Presence, pts$prob, mean(pts$Presence)),
+                   pr_auc_landscape = ap_pointwise(pts$Presence, pts$prob, PI)))
+write.csv(realized, file.path(HERE, "data", "example_model", "pr_auc_realized_by_domain.csv"),
+          row.names = FALSE)
+
+## (B) a priori: correct the reported TEST-HOLDOUT pr_auc (decoupled from landscape) to PI
+pr_test <- 0.836                                  # test_holdout_metrics.csv
+pi_test <- 1 / (1 + 1.023)                        # PA1:1.023 -> design prevalence ~0.494
+apriori <- ap_scalar_to_prev(pr_test, pi_test, PI, grid = GRID)
+
+## SIDE-BY-SIDE: summary-metric (reconstructed) vs per-point (exact) PR curve at landscape PI, same
+## model and hold-out set; they differ only in the information used. classic design excluded (bias).
+EX <- "1arc-Iteration1-PA1:1.023DO:0-Seed5101"
+h  <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))
+h  <- h[model == EX & calibration == "raw" & design != "classic"]
+pi_holdout <- mean(h$Presence)                    # prevalence the reported PR-AUC is measured at
+
+## PR curves exact vs reconstructed: pr_curve_exact(), pr_curve_binormal() -- see fn_average_precision.R
+ap_exact_hold <- ap_pointwise(h$Presence, h$prob, pi_holdout)   # == reported scalar
+mu_ex <- uniroot(function(m) ap_binormal(m, pi_holdout, grid = GRID) - ap_exact_hold, c(1e-3, 8))$root
+ap_exact_land <- ap_pointwise(h$Presence, h$prob, PI)
+ap_recon_land <- ap_binormal(mu_ex, PI, grid = GRID)
+
+curve <- rbind(
+  data.frame(pr_curve_exact(h$Presence, h$prob, PI),
+             route = sprintf("Per-point, exact  (PR-AUC = %.2f)", ap_exact_land)),
+  data.frame(pr_curve_binormal(mu_ex, PI),
+             route = sprintf("Summary metric, reconstructed  (PR-AUC = %.2f)", ap_recon_land))
+)
+p_prcurve <- ggplot(curve, aes(recall, precision, colour = route)) +
+  geom_hline(yintercept = PI, linetype = "dashed", colour = "grey55") +
+  annotate("text", x = 0.02, y = PI, label = sprintf("no-skill = prevalence (%.3f)", PI),
+           hjust = 0, vjust = -0.5, size = 3, colour = "grey45") +
+  geom_line(linewidth = 0.9) +
+  scale_colour_manual(values = c("#2a78d6", "#d1495b"), name = NULL) +
+  coord_cartesian(ylim = c(0, NA)) +
+  labs(x = "Recall (true-positive rate)", y = sprintf("Precision at landscape prevalence %.1f%%", 100 * PI),
+       title = "Same model, same target prevalence: what the summary route misses",
+       subtitle = "Reconstruction undershoots the exact curve at low recall — the high-precision region a survey operates in.",
+       caption = sprintf("Example model %s; classic design excluded.", EX)) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom", plot.caption = element_text(colour = "grey45"))
+
+ggsave(file.path(HERE, "figures", "pr_summary_vs_perpoint.png"), p_prcurve, width = 9, height = 5, dpi = 150)
+undershoot <- 100 * (ap_exact_land - ap_recon_land) / ap_exact_land
+```
+
+```{r}
+#| label: fig-pr-summary-vs-perpoint
+#| fig-cap: "Exact per-point vs reconstructed precision-recall curve for the example model at 2.5% landscape prevalence. The summary route undershoots in the high-precision, low-recall region a survey actually operates in."
+p_prcurve
+```
+
+At the 2.5% target the exact per-point PR-AUC is `r sprintf("%.2f", ap_exact_land)`
+(a `r sprintf("%.1f", ap_exact_land / PI)`× lift over the no-skill baseline), while reconstructing
+it from the reported scalar through a binormal ROC gives `r sprintf("%.2f", ap_recon_land)` —
+undershooting by `r sprintf("%.0f%%", undershoot)`. Correcting the reported test-holdout PR-AUC
+(`r sprintf("%.3f", pr_test)` at ~`r sprintf("%.0f%%", 100 * pi_test)` design prevalence) to the
+same target a priori yields `r sprintf("%.2f", apriori$ap_target)` (implied ROC-AUC
+`r sprintf("%.2f", apriori$implied_roc_auc)`).
