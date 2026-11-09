@@ -4,6 +4,7 @@
 ## dca()'s `prevalence=` (its case-control adjustment) rather than reweighting by hand.
 suppressPackageStartupMessages({library(dcurves); library(dplyr); library(ggplot2)})
 HERE <- "/home/sagesteppe/Documents/assoRted/CDA4Dummies"
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 PI   <- 0.025
 EX   <- "1arc-Iteration1-PA1:30DO:0-Seed5101"   # spatial-mapping, 1:30 P:A (hold-out prev ~3.3%)
 
@@ -20,27 +21,11 @@ d <- dca(Presence ~ prob, data = h, prevalence = PI,
 ## Fit an equal-variance binormal ROC (mu) that reproduces the model's PR-AUC at its design
 ## prevalence, then read net benefit off it: at threshold p_t you operate at the ROC point whose
 ## slope equals the cost ratio ((1-pi)/pi)*(p_t/(1-p_t)) -- analytic for a binormal.
-ap_pointwise <- function(truth, prob, pi) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0)
-  w <- ifelse(truth == 1, pi / n1, (1 - pi) / n0)
-  o <- order(prob, decreasing = TRUE); truth <- truth[o]; w <- w[o]
-  tpw <- cumsum(w * (truth == 1)); fpw <- cumsum(w * (truth == 0))
-  sum(c(tpw[1] / pi, diff(tpw / pi)) * (tpw / (tpw + fpw)))
-}
-ap_binormal <- function(mu, pi, grid = 4000) {
-  f <- seq(1e-6, 1 - 1e-6, length.out = grid); tpr <- pnorm(qnorm(f) + mu)
-  prec <- (pi * tpr) / (pi * tpr + (1 - pi) * f)
-  sum(diff(c(0, tpr)) * (head(c(1, prec), -1) + tail(c(1, prec), -1)) / 2)
-}
+## ap_pointwise(), ap_binormal(), nb_binormal(): see R/fn_average_precision.R, R/fn_net_benefit.R
 pi_hold  <- mean(h$Presence)
 pr_hold  <- ap_pointwise(h$Presence, h$prob, pi_hold)      # the number a paper would report
 mu_fit   <- uniroot(function(m) ap_binormal(m, pi_hold) - pr_hold, c(1e-3, 8))$root
-nb_binormal <- sapply(PT_GRID, function(pt) {
-  m <- ((1 - PI) / PI) * (pt / (1 - pt))                    # target ROC slope for this threshold
-  cc <- (log(m) + mu_fit^2 / 2) / mu_fit                    # score cutoff giving that slope
-  fpr <- pnorm(-cc); tpr <- pnorm(mu_fit - cc)
-  PI * tpr - (1 - PI) * fpr * (pt / (1 - pt))
-})
+nb_bin   <- nb_binormal(mu_fit, PI, PT_GRID)               # best-achievable NB from the fitted ROC
 
 ## dcurves does the net-benefit math; we render it so Treat-all stays visible where the model
 ## coincides with it (the raw SDM flags every unit at these thresholds -> SDM == Treat All).
@@ -53,7 +38,7 @@ nb <- as_tibble(d) |>
                               "SDM" = "SDM (per-point, exact)"),
             threshold, net_benefit) |>
   bind_rows(tibble(strategy = "SDM (summary, binormal)",
-                   threshold = PT_GRID, net_benefit = nb_binormal)) |>
+                   threshold = PT_GRID, net_benefit = nb_bin)) |>
   mutate(strategy = factor(strategy, levels = lv))
 is_ref  <- grepl("treat", nb$strategy)
 nb_mark <- nb$net_benefit[nb$strategy == "SDM (per-point, exact)"][

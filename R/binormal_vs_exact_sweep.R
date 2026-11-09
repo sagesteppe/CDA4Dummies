@@ -16,41 +16,13 @@
 ## across models, so the gap is noisy -- this is a look, not a law.
 suppressPackageStartupMessages({library(data.table); library(dplyr); library(ggplot2)})
 HERE <- "/home/sagesteppe/Documents/assoRted/CDA4Dummies"
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 PI   <- 0.025
 PT   <- seq(0.005, 0.25, by = 0.005)              # decision-relevant threshold range for the gap
-clamp <- function(p) pmin(pmax(p, 1e-6), 1 - 1e-6)
-
-ap_pointwise <- function(truth, prob, pi) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0); if (n1 == 0 || n0 == 0) return(NA_real_)
-  w <- ifelse(truth == 1, pi / n1, (1 - pi) / n0)
-  o <- order(prob, decreasing = TRUE); truth <- truth[o]; w <- w[o]
-  tpw <- cumsum(w * (truth == 1)); fpw <- cumsum(w * (truth == 0))
-  sum(c(tpw[1] / pi, diff(tpw / pi)) * (tpw / (tpw + fpw)))
-}
-ap_binormal <- function(mu, pi, grid = 3000) {
-  f <- seq(1e-6, 1 - 1e-6, length.out = grid); tpr <- pnorm(qnorm(f) + mu)
-  prec <- (pi * tpr) / (pi * tpr + (1 - pi) * f)
-  sum(diff(c(0, tpr)) * (head(c(1, prec), -1) + tail(c(1, prec), -1)) / 2)
-}
-exact_nb <- function(truth, prob, pi, pt) {               # calibration-dependent (raw cutoffs)
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0)
-  w <- ifelse(truth == 1, pi / n1, (1 - pi) / n0); n <- sum(w)
-  vapply(pt, function(t) { pp <- prob >= t
-    sum(w[pp & truth == 1]) / n - sum(w[pp & truth == 0]) / n * (t / (1 - t)) }, numeric(1))
-}
-binorm_nb <- function(mu, pi, pt) {                        # best-achievable NB from the ROC
-  vapply(pt, function(t) { m <- ((1 - pi) / pi) * (t / (1 - t))
-    cc <- (log(m) + mu^2 / 2) / mu
-    pi * pnorm(mu - cc) - (1 - pi) * pnorm(-cc) * (t / (1 - t)) }, numeric(1))
-}
-cox <- function(truth, prob) {                             # hold-out calibration
-  lp <- qlogis(clamp(prob))
-  fit_slope <- tryCatch(glm(truth ~ lp, family = binomial), error = function(e) NULL)
-  fit_intc  <- tryCatch(glm(truth ~ 1, offset = lp, family = binomial), error = function(e) NULL)
-  ok <- function(f) !is.null(f) && f$converged && all(abs(coef(f)) < 15)  # drop separated/diverged fits
-  c(cox_intercept = if (ok(fit_intc)) unname(coef(fit_intc)[1]) else NA_real_,
-    cox_slope     = if (ok(fit_slope)) unname(coef(fit_slope)[2]) else NA_real_)
-}
+GRID <- 3000                                      # binormal integration grid for this sweep
+## helpers: ap_pointwise(), ap_binormal() (fn_average_precision.R);
+##   nb_exact() = calibration-dependent exact NB, nb_binormal() = best-achievable NB from the ROC
+##   (fn_net_benefit.R); cox_calibration() = hold-out calibration (fn_calibration.R)
 
 d <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))
 d <- d[calibration == "raw" & design == "spatial_mapping"]
@@ -61,10 +33,10 @@ res <- d[, {
   if (uniqueN(Presence) < 2 || .N < 30) .SD[0]              # need both classes and a usable n
   else {
     pih <- mean(Presence); pr <- ap_pointwise(Presence, prob, pih)
-    mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih) - pr, c(1e-3, 8))$root,
+    mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih, grid = GRID) - pr, c(1e-3, 8))$root,
                     error = function(e) NA_real_)
-    gap <- if (is.na(mu)) rep(NA_real_, length(PT)) else binorm_nb(mu, PI, PT) - exact_nb(Presence, prob, PI, PT)
-    cc  <- cox(Presence, prob)
+    gap <- if (is.na(mu)) rep(NA_real_, length(PT)) else nb_binormal(mu, PI, PT) - nb_exact(Presence, prob, PI, PT)
+    cc  <- cox_calibration(Presence, prob)
     data.table(design = design[1], resolution = resolution[1], pa_ratio = pa_ratio[1],
                n = .N, prev_holdout = pih, pr_auc = pr, mu = mu,
                cox_intercept = cc[["cox_intercept"]], cox_slope = cc[["cox_slope"]],

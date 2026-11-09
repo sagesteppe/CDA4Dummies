@@ -6,33 +6,15 @@
 ## the x-axis to (target / natural prevalence) and every ratio should collapse onto one curve.
 suppressPackageStartupMessages({library(data.table); library(dplyr); library(ggplot2)})
 HERE <- "/home/sagesteppe/Documents/assoRted/CDA4Dummies"
-
-ap_pointwise <- function(truth, prob, pi) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0); if (n1 == 0 || n0 == 0) return(NA_real_)
-  w <- ifelse(truth == 1, pi / n1, (1 - pi) / n0)
-  o <- order(prob, decreasing = TRUE); truth <- truth[o]; w <- w[o]
-  tpw <- cumsum(w * (truth == 1)); fpw <- cumsum(w * (truth == 0))
-  sum(c(tpw[1] / pi, diff(tpw / pi)) * (tpw / (tpw + fpw)))
-}
-ap_binormal <- function(mu, pi, grid = 3000) {
-  f <- seq(1e-6, 1 - 1e-6, length.out = grid); tpr <- pnorm(qnorm(f) + mu)
-  prec <- (pi * tpr) / (pi * tpr + (1 - pi) * f)
-  sum(diff(c(0, tpr)) * (head(c(1, prec), -1) + tail(c(1, prec), -1)) / 2)
-}
-exact_nb <- function(truth, prob, pi, pt) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0)
-  w <- ifelse(truth == 1, pi / n1, (1 - pi) / n0); n <- sum(w)
-  vapply(pt, function(t) { pp <- prob >= t
-    sum(w[pp & truth == 1]) / n - sum(w[pp & truth == 0]) / n * (t / (1 - t)) }, numeric(1))
-}
-binorm_nb <- function(mu, pi, pt) vapply(pt, function(t) {
-  m <- ((1 - pi) / pi) * (t / (1 - t)); cc <- (log(m) + mu^2 / 2) / mu
-  pi * pnorm(mu - cc) - (1 - pi) * pnorm(-cc) * (t / (1 - t)) }, numeric(1))
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
+GRID <- 3000                                      # binormal integration grid for this sweep
+## helpers: ap_pointwise(), ap_binormal() (fn_average_precision.R);
+##   nb_binormal() = best-achievable NB from ROC, nb_exact() = exact NB (fn_net_benefit.R)
 
 ## mean gap over a prevalence-RELATIVE threshold window (same relative tolerance at every target)
 mean_gap <- function(truth, prob, mu, pi_target) {
   pt <- pmin(pi_target * seq(0.25, 10, by = 0.25), 0.95)
-  mean(binorm_nb(mu, pi_target, pt) - exact_nb(truth, prob, pi_target, pt))
+  mean(nb_binormal(mu, pi_target, pt) - nb_exact(truth, prob, pi_target, pt))
 }
 
 d <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))
@@ -44,7 +26,7 @@ d[, pa_ratio := round(as.numeric(sub(".*PA1:([0-9.]+)DO.*", "\\1", model)))]  # 
 mods <- d[, {
   if (uniqueN(Presence) < 2 || .N < 30) .SD[0] else {
     pih <- mean(Presence); pr <- ap_pointwise(Presence, prob, pih)
-    mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih) - pr, c(1e-3, 8))$root, error = function(e) NA_real_)
+    mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih, grid = GRID) - pr, c(1e-3, 8))$root, error = function(e) NA_real_)
     .(pa_ratio = pa_ratio[1], eval_prev = pih, mu = mu)
   }
 }, by = model]

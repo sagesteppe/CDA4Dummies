@@ -11,33 +11,13 @@
 ## Example model: 1arc-Iteration1-PA1:1.023DO:0-Seed5101  (see data/example_model/README.md)
 suppressPackageStartupMessages(library(tidyverse))
 HERE <- "/home/sagesteppe/Documents/assoRted/CDA4Dummies"
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 PI   <- 0.025                                   # target landscape prevalence for this portion
 
-## ---- (A) exact per-point average precision, case-weighted to effective prevalence pi -------
-ap_pointwise <- function(truth, prob, pi) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0)
-  if (n1 == 0 || n0 == 0) return(NA_real_)
-  w <- ifelse(truth == 1, pi / n1, (1 - pi) / n0) # presence pi/n1, absence (1-pi)/n0
-  o <- order(prob, decreasing = TRUE); truth <- truth[o]; w <- w[o]
-  tpw <- cumsum(w * (truth == 1)); fpw <- cumsum(w * (truth == 0))
-  recall <- tpw / pi                              # total presence weight = pi
-  prec   <- tpw / (tpw + fpw)
-  sum(c(recall[1], diff(recall)) * prec)
-}
-
-## ---- (B) scalar PR-AUC at design prevalence pi0 -> average precision at target prevalence ---
-ap_binormal <- function(mu, pi, grid = 20000) {
-  f   <- seq(1e-7, 1 - 1e-7, length.out = grid)   # FPR ascending -> recall ascending
-  tpr <- pnorm(qnorm(f) + mu)                      # recall (invariant with prevalence)
-  prec <- (pi * tpr) / (pi * tpr + (1 - pi) * f)
-  r <- c(0, tpr); p <- c(1, prec)
-  sum(diff(r) * (head(p, -1) + tail(p, -1)) / 2)  # trapezoid AP
-}
-ap_scalar_to_prev <- function(pr_auc, pi0, pi_target) {
-  mu <- uniroot(function(m) ap_binormal(m, pi0) - pr_auc, c(1e-3, 8))$root
-  list(ap_target = ap_binormal(mu, pi_target), mu = mu,
-       implied_roc_auc = pnorm(mu / sqrt(2)))
-}
+## (A) exact per-point average precision, case-weighted to prevalence pi:  ap_pointwise()
+## (B) scalar PR-AUC at design prevalence pi0 -> AP at target prevalence:  ap_scalar_to_prev()
+##     (fits a binormal ROC via ap_binormal()).  All: see R/fn_average_precision.R
+GRID <- 20000                                   # fine binormal grid for this a-priori portion
 
 ## ---- run on the example model --------------------------------------------------------------
 pts <- read.csv(file.path(HERE, "data", "example_model", "groundtruth_points.csv"))
@@ -58,7 +38,7 @@ realized <- pts |>
 ## a priori: correct the reported TEST-HOLDOUT pr_auc (decoupled from landscape) to PI
 pr_test <- 0.836                                  # test_holdout_metrics.csv
 pi_test <- 1 / (1 + 1.023)                         # PA1:1.023 -> design prevalence ~0.494
-apriori <- ap_scalar_to_prev(pr_test, pi_test, PI)
+apriori <- ap_scalar_to_prev(pr_test, pi_test, PI, grid = GRID)
 
 write.csv(realized, file.path(HERE, "data", "example_model", "pr_auc_realized_by_domain.csv"),
           row.names = FALSE)
@@ -88,26 +68,11 @@ h  <- h[model == EX & calibration == "raw" & design != "classic"]
 pi_holdout <- mean(h$Presence)                    # prevalence the reported PR-AUC is measured at
 O  <- PI / (1 - PI)
 
-## exact PR curve from held-out points, case-weighted to prevalence pi
-pr_curve_exact <- function(truth, prob, pi) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0)
-  w  <- ifelse(truth == 1, pi / n1, (1 - pi) / n0)
-  o  <- order(prob, decreasing = TRUE); truth <- truth[o]; w <- w[o]
-  tpw <- cumsum(w * (truth == 1)); fpw <- cumsum(w * (truth == 0))
-  data.frame(recall = tpw / pi, precision = tpw / (tpw + fpw))
-}
-## reconstructed PR curve from a binormal ROC (mu) at prevalence pi
-pr_curve_binormal <- function(mu, pi, grid = 400) {
-  r <- seq(1e-3, 1 - 1e-3, length.out = grid)
-  fpr <- pnorm(qnorm(r) - mu)                      # invert TPR = pnorm(qnorm(FPR)+mu)
-  o <- pi / (1 - pi)
-  data.frame(recall = r, precision = (o * r) / (o * r + fpr))
-}
-
+## PR curves exact vs reconstructed: pr_curve_exact(), pr_curve_binormal() -- see fn_average_precision.R
 ap_exact_hold <- ap_pointwise(h$Presence, h$prob, pi_holdout)   # == reported scalar
-mu_ex <- uniroot(function(m) ap_binormal(m, pi_holdout) - ap_exact_hold, c(1e-3, 8))$root
+mu_ex <- uniroot(function(m) ap_binormal(m, pi_holdout, grid = GRID) - ap_exact_hold, c(1e-3, 8))$root
 ap_exact_land <- ap_pointwise(h$Presence, h$prob, PI)
-ap_recon_land <- ap_binormal(mu_ex, PI)
+ap_recon_land <- ap_binormal(mu_ex, PI, grid = GRID)
 
 curve <- rbind(
   data.frame(pr_curve_exact(h$Presence, h$prob, PI),

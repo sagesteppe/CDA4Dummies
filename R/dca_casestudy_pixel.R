@@ -12,6 +12,7 @@
 PI <- 0.05                                # target landscape prevalence
 suppressPackageStartupMessages(library(tidyverse))
 HERE <- "/home/sagesteppe/Documents/assoRted/CDA4Dummies"
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 
 d <- read.csv(file.path(HERE, "data", "groundtruth_point_predictions.csv"))
 d <- d[d$calibration == "raw", ]
@@ -19,26 +20,14 @@ d$domain <- factor(d$domain, levels = c("Interp <=270m", "Interp >270m", "Extrap
 
 pt_grid <- seq(0.005, 0.15, by = 0.0025) # decision-relevant thresholds (rare-species survey)
 
-reweight <- function(truth, pi) {
-  n1 <- sum(truth == 1); n0 <- sum(truth == 0)
-  ifelse(truth == 1, pi / n1, (1 - pi) / n0)
-}
-
-## prevalence-reweighted net benefit of a single model's predictions across the pt grid
-nb_model_curve <- function(truth, prob, pt_grid, pi) {
-  w <- reweight(truth, pi); n <- sum(w)
-  vapply(pt_grid, function(pt) {
-    pp <- prob >= pt
-    sum(w[pp & truth == 1]) / n - sum(w[pp & truth == 0]) / n * (pt / (1 - pt))
-  }, numeric(1))
-}
+## prevalence-reweighted net benefit nb_exact(): see R/fn_net_benefit.R
 
 ## --- model curves: net benefit per (domain, model), then median across models ---
 model_cells <- d |> group_by(domain, design, model) |> group_split()
 model_nb <- map_dfr(model_cells, function(cc) {
   if (length(unique(cc$Presence)) < 2 || nrow(cc) < 8) return(NULL)
   tibble(domain = cc$domain[1], model = cc$model[1],
-         pt = pt_grid, nb = nb_model_curve(cc$Presence, cc$prob, pt_grid, PI))
+         pt = pt_grid, nb = nb_exact(cc$Presence, cc$prob, PI, pt_grid))
 })
 model_curve <- model_nb |>
   group_by(domain, pt) |>
@@ -47,7 +36,7 @@ model_curve <- model_nb |>
 
 ## --- reference strategies at the target landscape prevalence PI (same in every domain) ---
 ref_curve <- tibble(pt = pt_grid) |>
-  mutate(treat_all  = PI - (1 - PI) * (pt / (1 - pt)),
+  mutate(treat_all  = nb_treat_all(PI, pt),
          treat_none = 0) |>
   crossing(domain = levels(d$domain)) |>
   mutate(domain = factor(domain, levels = levels(d$domain))) |>
@@ -94,7 +83,7 @@ ggsave(file.path(HERE, "figures", "dca_casestudy_pixel.png"), p,
 cat(sprintf("target landscape prevalence PI = %.3f\n", PI))
 cat("where SDM beats both references (max p_t with SDM net benefit > treat-all and > 0):\n")
 model_curve |>
-  left_join(tibble(pt = pt_grid, ta = PI - (1 - PI) * (pt_grid / (1 - pt_grid))), by = "pt") |>
+  left_join(tibble(pt = pt_grid, ta = nb_treat_all(PI, pt_grid)), by = "pt") |>
   group_by(domain) |>
   summarise(max_pt_useful = { ok <- net_benefit > pmax(ta, 0); if (any(ok)) max(pt[ok]) else NA_real_ },
             .groups = "drop") |>

@@ -4,6 +4,7 @@
 ## reweighted to a target prevalence, for raw-fixed vs prevalence-recalibrated probabilities.
 suppressPackageStartupMessages(library(tidyverse))
 HERE <- "/home/sagesteppe/Documents/assoRted/CDA4Dummies"
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 d <- read.csv(file.path(HERE,"data","groundtruth_point_predictions.csv"))
 ## RAW probabilities for all three designs (uniform; classic/results_classicsplit has no Platt
 ## rows, and the Note's question is PREVALENCE recalibration, not Platt). The 'recalibrated'
@@ -12,17 +13,9 @@ d <- d[d$calibration=="raw", ]
 
 pi_grid <- c(0.339,0.2,0.1,0.05,0.02,0.01,0.005,0.002)
 pt_grid <- c(0.01,0.05,0.10)                 # decision-relevant survey thresholds
-clamp   <- function(p) pmin(pmax(p,1e-6),1-1e-6)
-recal   <- function(prob,p_obs,pi) plogis(qlogis(clamp(prob)) - qlogis(clamp(p_obs)) + qlogis(pi))
-
-## weighted net benefit of the model and of treat-all at threshold pt, prevalence set by w
-nb <- function(truth, prob, w, pt){
-  n  <- sum(w); prev <- sum(w*truth)/n; pp <- prob >= pt
-  nb_m <- sum(w[pp & truth==1])/n - sum(w[pp & truth==0])/n * (pt/(1-pt))
-  nb_a <- prev - (1-prev)*(pt/(1-pt))
-  c(model=nb_m, best_ref=max(nb_a,0))
-}
-reweight <- function(truth,pi){ n1<-sum(truth==1); n0<-sum(truth==0); ifelse(truth==1, pi/n1, (1-pi)/n0) }
+## helpers: nb_exact(), nb_treat_all() (fn_net_benefit.R); recalibrate_to_prevalence() (fn_calibration.R)
+## best reference strategy = max(treat-all, treat-none=0) at the reweighted prevalence pi
+best_ref <- function(pi, pt) max(nb_treat_all(pi, pt), 0)
 
 cells <- d |> group_by(design,domain,model) |> group_split()
 res <- map_dfr(cells, function(cc){
@@ -30,11 +23,10 @@ res <- map_dfr(cells, function(cc){
   p_obs <- mean(cc$Presence)
   expand_grid(pi=pi_grid, pt=pt_grid, scenario=c("raw (fixed)","recalibrated")) |>
     pmap_dfr(function(pi,pt,scenario){
-      w  <- reweight(cc$Presence,pi)
-      pr <- if(scenario=="recalibrated") recal(cc$prob,p_obs,pi) else cc$prob
-      v  <- nb(cc$Presence, pr, w, pt)
+      pr <- if(scenario=="recalibrated") recalibrate_to_prevalence(cc$prob,p_obs,pi) else cc$prob
+      nb_m <- nb_exact(cc$Presence, pr, pi, pt)
       tibble(design=cc$design[1], domain=cc$domain[1], pi=pi, pt=pt, scenario=scenario,
-             nb_model=v["model"], excess=v["model"]-v["best_ref"])
+             nb_model=nb_m, excess=nb_m-best_ref(pi,pt))
     })
 })
 agg <- res |> group_by(design,domain,pi,pt,scenario) |>

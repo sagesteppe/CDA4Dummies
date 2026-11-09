@@ -1,0 +1,12 @@
+\begin{figure}
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={An SDM's net benefit calculated using the two naive approaches. Using the binormal assumption on the reported PR-AUC value (summary), and from the held-out predictions (per-point). For this model, fit with a P:A ratio near the landscape prevalence, the two curves largely agree. Here two curves cross near p\_t ≈ 0.25, with the per-point curve marginally higher under broad survey effort and marginally lower at the most selective thresholds, where few sites clear the cutoff.}]{UnderstandingBenefitsModelsLandManagement_files/9837e226f291fbc714ab24ad687b61084712576d.png}}
+\caption{An SDM's net benefit calculated using the two naive approaches. Using the binormal assumption on the reported PR-AUC value (summary), and from the held-out predictions (per-point). For this model, fit with a P:A ratio near the landscape prevalence, the two curves largely agree. Here two curves cross near p\_t ≈ 0.25, with the per-point curve marginally higher under broad survey effort and marginally lower at the most selective thresholds, where few sites clear the cutoff.}\label{fig-naive-dca}
+\end{figure}
+\efloatseparator
+ 
+\begin{figure}
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={Restricting the decision curve to the area of applicability (in-domain, blue) strips away the easy absences that inflate the whole-test estimate (naive, orange). The in-domain model still adds net benefit at the low, broad-survey thresholds relevant to a rare-species search, but less than the naive curve implies. Both curves recalculated at 5\% prevalence}]{UnderstandingBenefitsModelsLandManagement_files/7f07d91a69ae33771e88412fe93789a09e930340.png}}
+\caption{Restricting the decision curve to the area of applicability (in-domain, blue) strips away the easy absences that inflate the whole-test estimate (naive, orange). The in-domain model still adds net benefit at the low, broad-survey thresholds relevant to a rare-species search, but less than the naive curve implies. Both curves recalculated at 5\% prevalence}\label{fig-aoa}
+\end{figure}

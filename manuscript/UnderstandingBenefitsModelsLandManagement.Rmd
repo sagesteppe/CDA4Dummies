@@ -1,15 +1,70 @@
 ---
 title: "Understanding the Benefits of Models in Land Management; Applications of Decision Curve Analysis"
-author: "sagesteppe"
-date: last-modified
+author: |
+  Reed Clark Benkendorf$^{1,2}$, Jeremie B. Fant$^{1,2}$, Sophie Taddeo$^{3}$  
+  $^{1}$ Chicago Botanic Garden, Glencoe, Illinois 60022, USA  
+  $^{2}$ Plant Biology and Conservation, Northwestern University, Evanston, Illinois 60208, USA  
+  $^{3}$ Department of Environmental and Ocean Sciences, University of California San Diego, San Diego, California 92110, USA  
+abstract: |
+  \noindent ## 300 words max
+keywords: ["spatial data science", "land management", "conservation", "rare plants", "landscape ecology"]
+orcid: |
+  Reed Benkendorf https://orcid.org/0000-0003-3110-6687  
+  Jeremie Fant https://orcid.org/0000-0001-9276-1111  
+  Sophie Taddeo https://orcid.org/0000-0002-7789-1417  
+output: 
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+    toc: false
+    number_sections: false
+    fig_caption: true
+csl: "../citations/journal-of-applied-ecology.csl"
+bibliography: "../citations/citations.bib"
+link-citations: true
+always_allow_html: true
+header-includes:
+  - \usepackage{endfloat}
+  - \usepackage{setspace}
+  - \doublespacing
+  - \usepackage{lineno}
+  - \linenumbers
+  - \makeatletter
+  - |
+    \renewcommand{\@maketitle}{%
+      \newpage
+      \null
+      \vskip 2em%
+      \begin{center}%
+      \let \footnote \thanks
+        {\LARGE \@title \par}%
+        \vskip 1.5em%
+        {\large
+          \lineskip .5em%
+          \begin{minipage}{0.95\textwidth}
+            \centering
+            \@author
+          \end{minipage}\par}%
+        \vskip 1em%
+        {\large \@date}%
+      \end{center}%
+      \par
+      \vskip 1.5em}
+  - \makeatother
 ---
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, comment = "")
+options(
+  warn                   = -1,     # mute R warnings globally
+  readr.show_col_types   = FALSE,  # no read_csv/read_tsv column-spec messages
+  readr.show_progress    = FALSE,  # no reader progress bars
+  dplyr.summarise.inform = FALSE   # no summarise() regrouping notes
+)
+```
 
 ```{r}
 library(dcurves)
 ```
-
-# Abstract << 300 word max s>>
-The application 
 
 # Main << 3500 words  // freeform section heading >>
 
@@ -24,10 +79,6 @@ Decision curve analysis (DCA) was developed in the early millenium by Vickers et
 This tool offers a relevant lens to contextualise the net benefits of using models under certain conditions, for phenomena at different prevalences across the landscape. 
 
 # Conceptual Background << 300 words max // essential components >>
-
-```{r}
-
-```
 
 << DCA Plot here >> all components labeled
 
@@ -143,7 +194,7 @@ When the P:A ratio is close to the landscape prevalence, the summary route is ad
 
 #### Naive formulation summary
 
-![An SDM's net benefit calculated using the two naive approaches. Using the binormal assumption on the reported PR-AUC value (summary), and from the held-out predictions (per-point). For this model, fit with a P:A ratio near the landscape prevalence, the two curves largely agree. Here two curves cross near p_t ≈ 0.25, with the per-point curve marginally higher under broad survey effort and marginally lower at the most selective thresholds, where few sites clear the cutoff.](figures/dca_baseline_dcurves.png){#fig-naive-dca}
+![An SDM's net benefit calculated using the two naive approaches. Using the binormal assumption on the reported PR-AUC value (summary), and from the held-out predictions (per-point). For this model, fit with a P:A ratio near the landscape prevalence, the two curves largely agree. Here two curves cross near p_t ≈ 0.25, with the per-point curve marginally higher under broad survey effort and marginally lower at the most selective thresholds, where few sites clear the cutoff.](../figures/dca_baseline_dcurves.png){#fig-naive-dca}
 
 However, while useful, both of these approaches entail three assumptions, which may not be safe for all decisions.
 First, that pixels are independent and each able to harbour the taxon; second, that the model is perfectly calibrated, without bias; and third, that it interpolates across the whole landscape rather than extrapolating into part of it.
@@ -169,22 +220,19 @@ used and confirm the patch-level DCA is stable across a reasonable δ range. >>
 
 ### Correcting to the Area of Applicability << 200 words >>
 
-The area of applicability is the portion of landscape where the model is interpolating. 
-For SDMs our work has shown that the area of applicability (Meyers & Pebesma) is best calculated using only training presences, or these and ground truthed absences. 
-Many presences, especially pseudo-absences, may be located far enough in environmental or geographic space that they do little to inform the ability of the model to detect rare species; rather they function as guards to prevent the prediction of suitable habitat in uncovered space. 
+The area of applicability is the portion of the landscape where the model is interpolating. 
+For SDMs our work has shown that the area of applicability (Meyers & Pebesma) is best calculated using only training presences, or these and ground-truthed absences. 
+Many pseudo-absences, may be located far enough in environmental or geographic space that they do little to inform the ability of the model to detect rare species; rather they function as guards to prevent the prediction of suitable habitat in uncovered space. 
 
-Accordingly, models are expected to be less performant within the AOA than across the entire background landscape, due to these points being easier to discern from presences and inflate metrics of model performance (Lobos). 
-To calculate this curve, the procedure outlined in section "Per-point Predictions" is performed on data that fall within the AOA. 
-A user should also redefine their expected prevalence of the species in this subset of the landscape using the raster surfaces depicting the AOA. 
-Here we show that the value of PR-AUC, within the genuine area to model, has greatly reduced, yet still positive net-benefit relative to the naive approaches.
+Accordingly, models are expected to be less performant within the AOA than across the entire background landscape, because these easily-discerned absences inflate whole-landscape performance metrics (Lobos). 
+To calculate this curve, the procedure outlined in section "Using Per-point Predictions" and test data that fall within the AOA. 
+A user should also redefine their expected prevalence of the species within this subset of the landscape using the raster surfaces depicting the AOA. 
+Across 128 models, restricting to the area of applicability lowered ROC-AUC by a median of ~25% and more than halved PR-AUC (from 0.61 to 0.25 at 5% prevalence); apparent skill shrinks sharply, yet net benefit stays positive at the decision-relevant thresholds (Appendix 2).
 
-Note that AOAs are shaped as a function of the hyperdimensional space of indepedent variables. 
-Hence models with fewer covariates, are able to retain larger AOAs.
+Note that AOAs are shaped as a function of the hyperdimensional space of independent variables. 
+Hence, models with fewer covariates, are able to retain larger AOAs.
 
-![Restricting the decision curve to the area of applicability (in-domain, blue) strips away the easy absences that inflate the whole-test estimate (naive, orange). The in-domain model still adds net benefit at the low, broad-survey thresholds relevant to a rare-species search, but less than the naive curve implies. Both curves recalculated at 5% prevalence](figures/dca_aoa_inflation.png){#fig-aoa}
-
-
-full experiment in Appendix 2.
+![Restricting the decision curve to the area of applicability (in-domain, blue) strips away the easy absences that inflate the whole-test estimate (naive, orange). The in-domain model still adds net benefit at the low, broad-survey thresholds relevant to a rare-species search, but less than the naive curve implies. Both curves recalculated at 5% prevalence](../figures/dca_aoa_inflation.png){#fig-aoa}
 
 ### Combining Expert Opinions and the model << 200 words >>
 
@@ -217,23 +265,27 @@ J.B.F. is the Director of Conservation at the Chicago Botanic Garden, member of 
 The last ~ XX~ years of his career have focused on the conservation of rare plants ~ 1 2 3 4 5 words ~ and restoration. 
 S.T. is a professor of ~Geo some flavour~ at the University of California San Diego. 
 Her research focuses on enhancing urban wildland corridors and wetlands using decisions informed by remote sensing.
-R.C.B. worked as a field botanist and research ecologist for a variety of US federal and state land management agencies as well as NGOs, largely the Bureau of Land Management, for a decade as a contractor. 
-He currently works as a geospatial consultant in private industry. 
+R.C.B. worked as a field botanist and research ecologist for a variety of US federal and state land management agencies as well as NGOs for a decade. 
+He currently works as a geospatial consultant in the private sector. 
 
+### Funding
 
-## Literature Cited // << max 20 papers >>
+The authors have no funding to report.
 
-Taddeo et al. 2026
+### Conflicts of Interest
 
-Benkendorf et al. in prep 2027
+The authors declare no conflicts of interest.
 
-Yee-law ~2023
+### Data Availability Statement
 
-LObo - which absences?
+All analysis code, and occurrence data for this manuscript are available on GitHub at [REPO URL]. 
+The individual model objects used in this manuscript are available on Zenodo at [URL].
+Data from the referred manuscript are available at [], and []. 
 
-meyers & pebesma
+### Appendix
 
-
+1) WORDS
+2) WORDS
 
 ## article types notes below
 
@@ -242,3 +294,7 @@ meyers & pebesma
 ### target reviewers:
 
 Jenica Allen
+
+\singlespace
+
+### References
