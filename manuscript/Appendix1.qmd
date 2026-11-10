@@ -1,5 +1,5 @@
 ---
-title: "Appendix 1 — When the summary route reproduces the per-point curve"
+title: "Appendix 1 — Comparision of Summary and Per Point DCA Curves"
 date: last-modified
 ---
 
@@ -8,13 +8,19 @@ date: last-modified
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       fig.align = "center", dpi = 150)
 suppressPackageStartupMessages({library(data.table); library(dplyr); library(ggplot2)})
-HERE <- ".."                                      # this .qmd lives in manuscript/; repo root is ..
+HERE <- ".." # this .qmd lives in manuscript/; repo root is ..
 for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 ```
 
-**Question.** The summary route (reconstruct a decision curve from a model's reported PR-AUC via a binormal ROC) is cheap but assumes a curve shape; the per-point route (reweight the held-out predictions to the target prevalence) is exact but needs the raw predictions. When do they agree?
+**Situation** The summary route (reconstruct a decision curve from a model's reported PR-AUC via a binormal ROC) is cheap but assumes a curve shape. 
+Wheras the per-point route (reweight the held-out predictions to the target prevalence) is exact but needs the raw predictions. 
+Here we determine whether the two values disagree substantially. 
 
-**Experiment.** For 128 spatial-mapping SDMs of *E. coloradense* spanning presence:absence design ratios from 1:1 to 1:30, we computed both decision curves at a target landscape prevalence and recorded their difference, `gap = net benefit (summary) − net benefit (exact)`, averaged over a prevalence-relative threshold window. We then (i) held the target at 2.5% and varied the P:A ratio, and (ii) swept the target prevalence from 1% to 50%. Each model's binormal was anchored to its own reported PR-AUC at its evaluation prevalence; the gap is a median across replicate seeds.
+**Experiment.** For 128 SDMs of *E. coloradense* spanning presence:absence ratios from 1:1 to 1:30, we computed both decision curves at a target landscape prevalence and recorded their difference.
+Defined as: `gap = net benefit (summary) − net benefit (exact)`, and averaged over a prevalence-relative threshold window. 
+We then (i) held the target landscape prevalence at 2.5% and varied the P:A ratio. 
+Additionally we (ii) swept the target prevalence from 1% to 50% to determine if this trend prevailed across ratios.
+Each model's binormal was anchored to its own reported PR-AUC at its evaluation prevalence; the gap is a median across replicate seeds.
 
 ```{r ratio-sweep}
 #| include: false
@@ -33,11 +39,11 @@ GRID <- 3000                                      # binormal integration grid
 
 d <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))
 d <- d[calibration == "raw" & design == "spatial_mapping"]
-d <- d[!(seed %in% c(5001, 5002, 5003))]          # drop the 3-seed replicate; keep 5101-5801 reps
+d <- d[!(seed %in% c(5001, 5002, 5003))] # drop the 3-seed replicate; keep 5101-5801 reps
 d[, pa_ratio := as.numeric(sub(".*PA1:([0-9.]+)DO.*", "\\1", model))]
 
 res <- d[, {
-  if (uniqueN(Presence) < 2 || .N < 30) .SD[0]              # need both classes and a usable n
+  if (uniqueN(Presence) < 2 || .N < 30) .SD[0] # need both classes and a usable n
   else {
     pih <- mean(Presence); pr <- ap_pointwise(Presence, prob, pih)
     mu  <- tryCatch(uniroot(function(m) ap_binormal(m, pih, grid = GRID) - pr, c(1e-3, 8))$root,
@@ -73,7 +79,8 @@ ggsave(file.path(HERE, "figures", "sweep_gap_vs_ratio.png"), p_ratio, width = 7,
 ggsave(file.path(HERE, "figures", "sweep_gap_vs_cox.png"),   p_cox,   width = 7, height = 5, dpi = 150)
 ```
 
-**Result.** The gap is governed by the distance between a model's *evaluation* prevalence (set by its P:A ratio, natural prevalence $1/(1+\text{ratio})$) and the *target* prevalence — not by the model's calibration (hold-out cox intercept is unrelated, Spearman $\approx `r sprintf("%.2f", spear_cox)`$).
+**Result.** The discord, between the two methods to calculate DCA, is governed by the distance between a model's *evaluation* prevalence (set by its P:A ratio, natural prevalence $1/(1+\text{ratio})$) and the *target* prevalence.
+The model's calibration has no effect (hold-out cox intercept, Spearman $\approx `r sprintf("%.2f", spear_cox)`$).
 
 ```{r}
 #| label: fig-gap-ratio
@@ -155,4 +162,5 @@ ggsave(file.path(HERE, "figures", "gap_collapse_test.png"), p_collapse, width = 
 p_target
 ```
 
-**Implication.** Use the summary route when a model's reported P:A ratio sits near the landscape prevalence of interest; otherwise the reported number is being read at the wrong prevalence, and the per-point route is worth the extra data. This is a property of *where the model was scored*, not of how good it is.
+**Conclusion** 
+When, the model was trained on a presence:absence ratio that differs vastly from the landscape prevalence of the taxon (e.g. 1:1), use the per-point calculation for DCAs.. 

@@ -1,5 +1,5 @@
 ---
-title: "Understanding the Benefits of Models in Land Management; Applications of Decision Curve Analysis"
+title: "Evaluating the Benefit of Models in Land Management Using Decision Curve Analysis"
 author: |
   Reed Clark Benkendorf$^{1,2}$, Jeremie B. Fant$^{1,2}$, Sophie Taddeo$^{3}$  
   $^{1}$ Chicago Botanic Garden, Glencoe, Illinois 60022, USA  

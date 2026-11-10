@@ -1,0 +1,167 @@
+---
+title: "Appendix 3 - How much do errors in the assumed prevalence change the decision curve?"
+date: last-modified
+---
+
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 150)
+suppressPackageStartupMessages({library(data.table); library(ggplot2)})
+HERE <- ".." # this .qmd lives in manuscript/; repo root is ..
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
+```
+
+**Situation.** Every decision curve is anchored to an estimate of the taxon's landscape prevalence $\pi$.
+However, the true prevalence is unknown; and expected to higher inthe AOA than across the whole domain. 
+Hence, the user chosen prevalence might affect the estimated net benefit from the DCA curve. 
+Here we determine the affect the accuracy of the prevalence estimate has on DCA curves. 
+
+**Experiment.** Using the per-point method, we recompute the decision curve for the example model across a plausible prevalence band in each context: **1–5% across the whole domain** and **2–10% within the AOA**. 
+For each context we swept $\pi$ across its band and recorded, at every threshold, the envelope of net benefit the SDM delivers and the envelope of the survey-all reference. 
+The width of each envelope is the sensitivity of the curve to the prevalence assumption; whether the SDM envelope stays above both references is whether the *decision* is sensitive to it.
+
+```{r prevalence-sensitivity}
+#| include: false
+EX <- "1arc-Iteration1-PA1:30DO:0-Seed5101" # same example model as Appendices 1-2
+PT <- seq(0.001, 0.25, by = 0.002) # decision-relevant threshold range
+
+p <- fread(file.path(HERE, "data", "holdout_point_predictions.csv"))[calibration == "raw" & design == "spatial_mapping"]
+a <- fread(file.path(HERE, "data", "holdout_point_aoa.csv"))
+m <- merge(p, a[, .(model, point_id, DI, DI_thresh)], by = c("model", "point_id")); m[, extrap := DI > DI_thresh]
+e   <- m[model == EX] # whole domain (naive, full hold-out)
+ind <- e[extrap == FALSE] # within AOA (in-domain points only)
+
+## Net-benefit envelope of the SDM (and of survey-all) as pi sweeps a prevalence band.
+band <- function(truth, prob, lo, hi, dom) {
+  prevs <- seq(lo, hi, length.out = 21); mid <- (lo + hi) / 2
+  M  <- sapply(prevs, function(pi) nb_exact(truth, prob, pi, PT))   # one SDM curve per prevalence
+  TA <- sapply(prevs, function(pi) nb_treat_all(pi, PT))
+  data.table(domain = dom, lo = lo, hi = hi, pt = PT,
+             sdm_lo = apply(M, 1, min),  sdm_hi = apply(M, 1, max),  sdm_mid = nb_exact(truth, prob, mid, PT),
+             ta_lo  = apply(TA, 1, min), ta_hi  = apply(TA, 1, max), ta_mid  = nb_treat_all(mid, PT))
+}
+DW <- "Whole domain  (prevalence 1-5%)"; DA <- "Within AOA  (prevalence 2-10%)"
+df <- rbind(band(e$Presence, e$prob, 0.01, 0.05, DW),
+            band(ind$Presence, ind$prob, 0.02, 0.10, DA))
+df[, domain := factor(domain, levels = c(DW, DA))]
+fwrite(df, file.path(HERE, "data", "prevalence_sensitivity_envelope.csv"))
+
+## Numbers for the prose: at the "survey 5 to find 1" threshold (p_t = 0.20), how wide is the band,
+## and does the SDM envelope ever fall to or below the survey-none (0) / survey-all references?
+PT_MARK <- 0.20
+at_mark <- df[which.min(abs(pt - PT_MARK)), .(domain, sdm_lo, sdm_hi, ta_hi)]
+w_lo <- df[domain == DW & sdm_lo < 0]; a_lo <- df[domain == DA & sdm_lo < 0]
+whole_width <- 100 * at_mark[domain == DW, sdm_hi - sdm_lo]
+aoa_width   <- 100 * at_mark[domain == DA, sdm_hi - sdm_lo]
+whole_robust <- nrow(w_lo) == 0                      # SDM lower edge stays > 0 everywhere in domain?
+aoa_cross_pt <- if (nrow(a_lo)) 100 * min(a_lo$pt) else NA_real_  # first pt where AOA SDM edge dips < 0
+
+p_prev <- ggplot(df, aes(pt)) +
+  geom_hline(yintercept = 0, colour = cda_cols[["treat_none"]], linewidth = 0.7) +
+  geom_vline(xintercept = PT_MARK, colour = "grey55", linetype = "dotted") +
+  geom_ribbon(aes(ymin = ta_lo,  ymax = ta_hi,  fill = "Survey all (treat-all)"), alpha = 0.25) +
+  geom_ribbon(aes(ymin = sdm_lo, ymax = sdm_hi, fill = "SDM (per-point)"),        alpha = 0.35) +
+  geom_line(aes(y = ta_mid,  colour = "Survey all (treat-all)"), linewidth = 0.5, linetype = "12") +
+  geom_line(aes(y = sdm_mid, colour = "SDM (per-point)"),        linewidth = 0.9) +
+  facet_wrap(~domain) +
+  scale_fill_manual(values = c("SDM (per-point)" = cda_cols[["naive"]], "Survey all (treat-all)" = cda_cols[["treat_all"]]), name = NULL) +
+  scale_colour_manual(values = c("SDM (per-point)" = cda_cols[["naive"]], "Survey all (treat-all)" = cda_cols[["treat_all"]]), name = NULL) +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(ylim = c(-0.02, 0.11)) +            # focus on the decision region; clip the deep negative tails
+  labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
+       title = "Decision-curve sensitivity to the assumed landscape prevalence",
+       subtitle = "Band = net benefit as the prevalence sweeps its range; line = band midpoint") +
+  theme_cda()
+ggsave(file.path(HERE, "figures", "dca_prevalence_sensitivity.png"), p_prev, width = 9, height = 5, dpi = 150)
+```
+
+**Result.** The two contexts have different sensitivity to prevalence uncertainty. 
+Across the whole domain the SDM envelope is narrow and sits entirely above both references through the whole decision-relevant range — at the "survey five to find one" threshold it spans only about `r sprintf("%.1f", whole_width)` percentage points of net benefit and never drops to the survey-none line. 
+The *decision* is robust: anywhere in the 1–5% band the model is worth using. 
+
+Within the AOA the same sweep produces a much wider envelope (about `r sprintf("%.1f", aoa_width)` points at the same threshold). 
+At the optimistic (10%) end of the band the in-domain curve keeps clear benefit through the relevant thresholds, but at the pessimistic (2%) end its lower edge drops below survey-none almost immediately`r if (!is.na(aoa_cross_pt)) sprintf(" (p_t ≈ %.0f%%)", aoa_cross_pt) else ""`. 
+The in-domain comparison retains only the hard absences, and net benefit scales with how much there is to find, so the curve is far more exposed to the prevalence estimate.
+
+```{r}
+#| label: fig-prevalence-sensitivity
+#| fig-cap: "Decision curves for the example model recomputed per-point across a plausible prevalence band. Each band is the net-benefit envelope as the assumed prevalence sweeps its range. The whole-domain curve is narrow and stays above both references, so the decision is insensitive to the prevalence estimate; the in-domain curve is wide and can cross the references."
+p_prev
+```
+
+## A fixed-fraction view: a central estimate that is off by a set amount
+
+The band above shows what happens across a wide range of plausible prevalences. 
+A practitioner usually has a single working estimate and a worry of a different shape: *my estimate is probably in the right neighbourhood, but it could be off by a quarter, a half, three-quarters.* 
+A manager who records 3% in the AOA when the truth is 6% has not used an implausible value, just one that is 50% low. 
+Here we fix a central true prevalence in each context (3% whole domain, 6% within AOA) and redraw the curve as the submitted estimate departs from it by ±25%, ±50% and ±75%.
+
+```{r misspecification}
+#| include: false
+## Same per-point machinery; now the prevalence is a central TRUTH misspecified by a fixed fraction.
+## Note the ACTION at a given p_t (survey every unit above it) does not depend on pi -- only the net
+## benefit you compute does. So this fan is the error in the *expected* benefit, and in whether the
+## model still looks worthwhile, induced by a wrong prevalence; it is not a change in what is surveyed.
+ERR  <- c(-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75)
+TRUE_W <- 0.03; TRUE_A <- 0.06 # central true prevalence per context
+
+fan <- function(truth, prob, true_pi, dom) rbindlist(lapply(ERR, function(er)
+  data.table(domain = dom, true_pi = true_pi, err = er, assumed = true_pi * (1 + er),
+             pt = PT, nb = nb_exact(truth, prob, true_pi * (1 + er), PT))))
+FW <- "Whole domain  (true prevalence 3%)"; FA <- "Within AOA  (true prevalence 6%)"
+fx <- rbind(fan(e$Presence, e$prob, TRUE_W, FW), fan(ind$Presence, ind$prob, TRUE_A, FA))
+fx[, domain := factor(domain, levels = c(FW, FA))]
+fx[, errlab := factor(sprintf("%+.0f%%", 100 * err), levels = sprintf("%+.0f%%", 100 * ERR))]
+fwrite(fx, file.path(HERE, "data", "prevalence_misspecification_fan.csv"))
+
+## Survey-all reference, drawn once at each context's TRUE prevalence: the benchmark the SDM must beat.
+## The vertical gap from a (mis)specified SDM curve down to this line is the model's benefit over
+## surveying everything, so a wrong prevalence is seen shrinking or inflating that gap.
+ref <- rbind(data.table(domain = FW, pt = PT, nb = nb_treat_all(TRUE_W, PT)),
+             data.table(domain = FA, pt = PT, nb = nb_treat_all(TRUE_A, PT)))
+ref[, domain := factor(domain, levels = c(FW, FA))]
+
+## Prose numbers: whole domain stays beneficial even at the worst underestimate; within the AOA the
+## break-even threshold (where the drawn SDM curve crosses survey-none) moves a lot with the estimate.
+cross0 <- function(dt) { i <- which(dt$nb < 0)[1]; if (is.na(i)) NA_real_ else 100 * dt$pt[i] }
+whole_worst_pos <- fx[domain == FW & err == -0.75, all(nb > 0)]       # model still beats survey-none?
+a_true <- cross0(fx[domain == FA & err == 0]); a_lo <- cross0(fx[domain == FA & err == -0.5]); a_hi <- cross0(fx[domain == FA & err == 0.5])
+
+pal <- setNames(colorRampPalette(c(cda_cols[["aoa"]], "grey80", cda_cols[["treat_all"]]))(length(ERR)),
+                sprintf("%+.0f%%", 100 * ERR))
+pal["+0%"] <- cda_cols[["treat_none"]]              # the true curve, drawn dark and heavy
+p_mis <- ggplot(fx, aes(pt, nb, colour = errlab)) +
+  geom_hline(yintercept = 0, colour = cda_cols[["treat_none"]], linewidth = 0.7) +
+  geom_vline(xintercept = PT_MARK, colour = "grey55", linetype = "dotted") +
+  geom_line(data = ref, aes(pt, nb, linetype = "Survey all"),
+            colour = cda_cols[["treat_all"]], linewidth = 0.7, inherit.aes = FALSE) +
+  geom_line(data = fx[err != 0], linewidth = 0.6) +
+  geom_line(data = fx[err == 0], linewidth = 1.1) +
+  facet_wrap(~domain) +
+  scale_colour_manual(name = "Prevalence estimate error", values = pal,
+                      guide = guide_legend(nrow = 2, order = 1)) +
+  scale_linetype_manual(name = NULL, values = c("Survey all" = "dashed"),
+                        guide = guide_legend(order = 2, override.aes = list(colour = cda_cols[["treat_all"]]))) +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(ylim = c(-0.02, 0.085)) +
+  labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
+       title = "Decision curve drawn with a misspecified prevalence") +
+  theme_cda()
+ggsave(file.path(HERE, "figures", "dca_prevalence_misspecification.png"), p_mis, width = 9, height = 5, dpi = 150)
+```
+
+Because the per-point action at a threshold does not depend on prevalence, misspecifying it does not change *which* sites you survey; it only distorts the net benefit you should anticipate. 
+This distortion is small where there is little to find and large where there is more: across the whole domain even a 75%-low estimate keeps the curve `r if (whole_worst_pos) "above survey-none throughout" else "near, but occasionally below, survey-none"`, so the model stays clearly worthwhile. 
+Within the AOA the break-even threshold, where the drawn curve meets survey-none, moves from about `r sprintf("%.0f%%", a_true)` at the true 6% to roughly `r sprintf("%.0f%%", a_lo)` if the estimate is 50% low and `r sprintf("%.0f%%", a_hi)` if it is 50% high, so a modest error slides the apparent range of useful thresholds up or down by a meaningful margin.
+
+```{r}
+#| label: fig-prevalence-misspecification
+#| fig-cap: "The same example model, now with a single central true prevalence (3% whole domain, 6% within AOA) misspecified by a fixed fraction. The heavy dark line is the truth; warmer curves overestimate, cooler curves underestimate. The dashed line is survey-all at the true prevalence. Across the whole domain the curve is well above both references even at a 75%-low estimate. While within the AOA the same fractional error swings the gap, and the break-even threshold, substantially, because net benefit there is far more sensitive to prevalence."
+p_mis
+```
+
+**Conclusion.** It is worth buffering occurence points, to estimate the prevalence, and to calculate the area of AOA, using a GIS, to refine estimates. 
+Where the curve stays clear of the survey-all and survey-none references, as across the whole domain here, both a wide plausible range and a sizeable error in a central estimate leave the recommendation intact. 
+Within the AOA, whose narrower, harder comparison makes net benefit scale steeply with prevalence, the same uncertainty moves the break-even threshold enough to change the advice; pin the prevalence down before trusting the curve at selective thresholds. 
+In every case the prevalence estimate changes the net benefit you *expect*, not the sites the model tells you to survey at a given threshold.

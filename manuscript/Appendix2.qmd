@@ -8,17 +8,24 @@ date: last-modified
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       fig.align = "center", dpi = 150)
 suppressPackageStartupMessages({library(data.table); library(ggplot2)})
-HERE <- ".."                                      # this .qmd lives in manuscript/; repo root is ..
+HERE <- ".." # this .qmd lives in manuscript/; repo root is ..
 for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
 ```
 
-**Question.** A reported PR-AUC or ROC-AUC summarises a model over its whole test set. But does that number describe the decision a practitioner actually faces — distinguishing occupied sites from the *hard*, environmentally-similar sites they might otherwise survey?
+**Situation.** A reported PR-AUC or ROC-AUC summarises a model over its whole test set. 
+However, the ease of far-away absences of pseudo-absences is likely to increase these reported metrics in the areas of landscape most difficult to distinguish suitable habitat in. 
+How does restricting the analysis to the area of applicability affect PR-AUC and ROC-AUC scores? 
 
-**Experiment.** We computed the Area of Applicability from the **training presences only** (pseudo-absences conflate the dissimilarity index) and labelled every hold-out point interpolation (`DI ≤ DI_thresh`) or extrapolation (`DI > DI_thresh`). This split is nearly collinear with the outcome: presences and a few hard absences fall in-domain, while the great majority of absences — environmentally distant from any occurrence — fall out-of-domain. We then scored each model two ways: *naive*, on the full hold-out, and *AOA-honest*, on the in-domain points only, reweighting both to the same prevalence so the only difference is which absences are in play. Performance was compared with ROC-AUC (prevalence-invariant) across all spatial-mapping models.
+**Experiment.** We computed the Area of Applicability from the **training presences only** (pseudo-absences conflate the dissimilarity index) and labelled every hold-out point interpolation (`DI ≤ DI_thresh`) or extrapolation (`DI > DI_thresh`). 
+This split is nearly collinear with the outcome: presences and a few hard absences fall in-domain, while the great majority of absences, environmentally distant from any occurrence, fall out-of-domain. 
+We then scored each model two ways: *naive*, on the full hold-out, and *AOA-honest*, on the in-domain points only, reweighting both to the same prevalence so the only difference is which absences are considered. 
+Performance was compared with ROC-AUC (prevalence-invariant) across all 128 SDM models.
 
 {{< include _aoa_downgrade.qmd >}}
 
-**Result.** Restricting to the in-domain region — where the model must separate presences from absences that *resemble* occupied habitat — lowers measured skill in **`r sprintf("%.0f%%", pct_drop)` of `r n_models` models** (median ROC-AUC `r sprintf("%.2f", med_full)` → `r sprintf("%.2f", med_in)`). The headline number is inflated by free credit for trivially rejecting the easy, far-from-suitable extrapolation absences (the "AUC inflated by easy absences" critique). In decision terms the effect is stark: the naive curve looks uniformly excellent, while the honest curve loses all value beyond a threshold of ~10%.
+**Result.** Restricting to the in-domain region, where the model must separate presences from absences that *resemble* occupied habitat, lowers measured skill in **`r sprintf("%.0f%%", pct_drop)` of `r n_models` models** (median ROC-AUC `r sprintf("%.2f", med_full)` -> `r sprintf("%.2f", med_in)`). 
+The headline number is inflated by free credit for trivially rejecting the easy, far-from-suitable extrapolation absences. 
+In decision terms the effect is stark: the naive curve looks uniformly excellent, while the honest curve loses all value beyond a threshold of ~10%.
 
 ```{r}
 #| label: fig-aoa-inflation
@@ -26,6 +33,9 @@ for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) so
 p_aoa
 ```
 
-**Isolating it from ground truth.** This downgrade uses only the hold-out predictions and the presences-only dissimilarity index — no field data — so it is an *a priori*, quantified penalty, and it is orthogonal to the prevalence correction of Appendix 1 (that sets the baseline; this measures discrimination among the hard cases). What it cannot reach is the *other* edge: the hold-out contains almost no points in genuinely novel, high-suitability environments, so it cannot characterise dangerous extrapolation. As expected, models perform poorly when extrapolating beyond their training space — but quantifying *that* collapse is an a posteriori, ground-truth question, not something the hold-out can answer.
+**Isolating it from ground truth.** This downgrade uses only the hold-out predictions and the presences-only dissimilarity index, hence an *a priori*, quantified penalty.
+Further it is orthogonal to the prevalence correction of Appendix 1 (that sets the baseline; this measures discrimination among the hard cases). 
+What it cannot reach is the *other* edge: the hold-out contains almost no points in genuinely novel, high-suitability environments, so it cannot characterise dangerous extrapolation. 
+As expected, models perform poorly when extrapolating beyond their training space, but quantifying *that* collapse is an a posteriori, ground-truth question, not something the hold-out can answer.
 
-**Implication.** Report model skill restricted to the area of applicability; the headline, whole-test number overstates decision-relevant performance, and the overstatement is computable before any field work.
+**Conclusion.** Report model skill restricted to the area of applicability; the headline, whole-test number overstates decision-relevant performance, and the overstatement is computable before any field work.
