@@ -4,3 +4,5 @@ citations/
 data/*.csv
 citations/
 .quarto
+literature/
+raster/

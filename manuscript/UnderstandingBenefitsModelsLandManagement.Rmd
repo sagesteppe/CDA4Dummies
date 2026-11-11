@@ -62,6 +62,12 @@ options(
 )
 ```
 
+```{r load libraries}
+library(sf)
+library(terra)
+library(whitebox)
+```
+
 # Main 
 
 # Introduction 
@@ -79,13 +85,12 @@ This tool offers a relevant lens to contextualise the net benefits of using mode
 << DCA Plot here >> all components labeled
 
 Decision curve analysis is considered visually on a plot with two axis. 
-The X axis is the prevalence of the phenomenom in the population. 
+The Y axis is the net benefit of making the action. 
 For example ... 
-The Y axis is the theshold probability ($p_t$), a metric each user will define based on their objectives. 
-For example, if you were satisfied to find one new rare plant population per five sites surveyed (i.e. finding a new population 20% ofthe time) than the $p_t$ is XX. 
-
-A DCA plot always contains a line with a fixed intercept, at 0, and slope of 0 (i.e. a horizontal line) ((NAME)); indicating the condition of making no action. 
-A DCA also contains a line ((NAME)) with a Y intercept of the threshold probability, and a slope relating it to the prevalence of the phenomon in the population on the X axis. 
+The X axis is the theshold probability ($p_t$), a metric each user will define based on their objectives. 
+For example, if you were satisfied to find one new rare plant population per five sites surveyed ($*1/5)*100$), $p_t$ is = 20%. 
+A DCA plot always contains a line with a fixed intercept, at 0, and slope of 0 (i.e. a horizontal line) 'treat none'; indicating the condition of making no action. 
+A DCA also contains a 'treat all' line with a Y intercept of the NET BENEFIT, and a slope relating it to the prevalence of the phenomon in the population on the X axis. 
 To the left of this line IS ((NAME)), to the right of it IS ((NAME)). 
 
 In practice, a DCA will generally contain two or more curves; although only one is required. 
@@ -116,7 +121,8 @@ Indeed it is common practice for certain models to reduce the absences to be rou
 Hence using a 1:1 ratio of P:A, we are reporting the measures of success for a taxon that would occupy 50% of the lanscape. 
 
 Clearly, this is not the case - even for many of the most common species. 
-Therefore, in the naive approach, we correct the PR-AUC to represent the expected fraction of the landscape occupied by the taxon, for a rare species generally from 0.05% to 5% of a landscape. 
+Therefore, in the naive approach, we correct the PR-AUC to represent the expected fraction of the landscape occupied by the taxon.
+For a rare species this fraction is small, and for a narrowly distributed endemic it can be far smaller than often assumed: our case study taxon occupies only ~0.003% of its modeled domain, so a realistic range spans roughly 0.001% to 5% of a landscape.
 
 
 # Applying DCA formulations to SDMs 
@@ -131,9 +137,60 @@ $$\text{Net benefit} = \underbrace{\frac{\text{occupied sites found}}{n}}_{\text
 
 ## Study System Background 
 
-Eriogonum coloradense is a rare species endemic to the central Rocky Mountains of Colorado USA. 
-In Benkendorf et al. 2027 we develop, and ground truth, species distribution models of it. 
-We also iteratively refine these models using a variety of spatial cross-validation approaches
+*Eriogonum coloradense* Small is a rare species endemic to the central Rocky Mountains of Colorado, USA. 
+It has roughly XX populations, and YY subpopulations, exhibits a bimodal distribution, and is classified as SOMETHING. 
+In Benkendorf et al. 2027 we iteratively develop, and ground truth, species distribution models for it. 
+
+```{r calculate buffered area of presences and domains}
+
+buffered_area_fn = function(x, dist){
+
+  sf::st_read(x, quiet = T) |>
+    # assumed distance form point that is populated 
+    sf::st_buffer(dist) |>
+    # combined areas to avoid 2x count overlapping
+    sf::st_union() |>
+    # default area is in m^2
+    sf::st_area() |>
+    # use hectares for possible line notes
+    units::set_units('ha') |>
+    # but in numeric format for multiplication
+    as.numeric()
+
+}
+
+area_iter0_occurrences = buffered_area_fn( ## from desk research
+  file.path('..', 'data', '3m-presence-iter0.gpkg'), dist = 50)
+
+area_iter2_occurrences = buffered_area_fn( 
+  ## after two rounds of pretty dense dist at 40 is generous. 
+  file.path('..', 'data', '3m-presence-iter2.gpkg'), dist = 40)
+
+area_domain = terra::rast(
+  file.path(
+    '..', 'data', 'raster', '1-3arc-Iteration1-PA1:35DO:0-Seed5001-Pr.tif')
+    ) |>
+  # just to ensure NA cells from preds are not ignored
+  # capture the bounding box
+  terra::ext() |>
+  #and assign its planar projection back on
+  terra::as.polygons(crs = 32613) |>
+  terra::expanse(unit="ha")
+
+domain_prev_pct = round(
+  ( 
+    (area_iter0_occurrences*1.25) / area_domain) 
+    * 100, 
+  3)
+```
+
+For the purposes of this example we calculate the area of occupation as 1.25x multiplier of the known occurrence points, with a dissolved 50m buffer around them, which assumes each point represents a population extending in a 250m radius.
+Giving us a total area of `r area_iter0_occurrences*1.25` ha. 
+
+The size of the modeled domain `r area_domain` ha, and the AOA as THIS. 
+Giving a prevalence across the domain of: `r domain_prev_pct`% , and a prevalence within the AOA of THIS %. 
+
+For $p_t$ we would be, and indeed were, happy to find one new (sub-)population every fifth sampling event. 
 
 ## A priori approaches 
 
@@ -155,8 +212,9 @@ $$\text{precision}_{\pi}(r) = \frac{O\, r}{O\, r + \text{FPR}(r)}
 $$O = \frac{\pi}{1-\pi} \qquad \left(\text{e.g. } \pi = 0.025 \Rightarrow O \approx 0.026\right)$$
 
 where $r$ is recall, $\text{FPR}(r)$ is the false-positive rate at that recall, and $O$ is the
-prevalence odds — the odds a point drawn at random is occupied, set by the target landscape
-prevalence $\pi$. Because recall and $\text{FPR}(r)$ are properties of the model's ROC and do
+prevalence odds, e.g. the odds a point drawn at random is occupied, set by the target landscape
+prevalence $\pi$. 
+Because recall and $\text{FPR}(r)$ are properties of the model's ROC and do
 not change with prevalence, the transform acts on precision alone: only the prevalence odds $O$
 moves.
 
@@ -214,7 +272,103 @@ detection. Each resulting patch is then scored as occupied if it contains ≥1 g
 presence, with an aggregated predicted probability (max or mean) over its pixels. Report the δ
 used and confirm the patch-level DCA is stable across a reasonable δ range. >>
 
-### Correcting to the Area of Applicability 
+```{r patch delineation watershed}
+# Single example model. sens_spec and delta are placeholders - real
+# sensitivity-specificity and a tuned prominence are joined in later.
+# Requires WhiteboxTools (whitebox::install_whitebox()).
+whitebox::wbt_verbose(FALSE)
+sens_spec <- 0.35   # suitable-habitat threshold (probability units)
+delta <- 0.05   # prominence: min neck depth to split two cores
+
+rdir        <- file.path('..', 'data', 'raster')
+src_tif     <- file.path(rdir, '1-3arc-Iteration1-PA1:35DO:0-Seed5001-Pr.tif')
+patches_tif <- file.path(rdir, 'example-patches.tif')
+sig_file    <- file.path(rdir, 'example-patches.sig')
+
+pr <- terra::rast(src_tif)
+
+# Skip the (costly, ~3e8-cell) watershed pipeline unless something that affects
+# the result changed: the thresholds, or the source raster. A signature sidecar
+# records those inputs; a match means the cached patches are still valid.
+sig   <- paste(sens_spec, delta, basename(src_tif),
+               file.info(src_tif)$size, file.mtime(src_tif), sep = '|')
+fresh <- file.exists(patches_tif) && file.exists(sig_file) &&
+         identical(readLines(sig_file, warn = FALSE), sig)
+
+if (fresh) {
+  patch_id <- terra::rast(patches_tif)
+} else {
+  mask <- pr >= sens_spec
+
+  # Marker-controlled watershed via the hydrological inversion trick: invert the
+  # probability surface so high-probability cores become pits, merge necks
+  # shallower than delta (fill max_depth), label the surviving pits as seeds,
+  # then route every suitable cell to the core it drains into. Intermediates
+  # persist to data/raster so a partial re-run can reuse the finished steps.
+  dem <- terra::ifel(mask, 1 - pr, NA)                 # cores -> pits
+  terra::writeRaster(dem, file.path(rdir, 'patch-dem.tif'), overwrite = TRUE)
+  whitebox::wbt_fill_depressions(
+    file.path(rdir,'patch-dem.tif'),
+    file.path(rdir,'patch-fill.tif'),
+    max_depth = delta
+    )
+  whitebox::wbt_sink(
+    file.path(rdir,'patch-fill.tif'),
+    file.path(rdir,'patch-sink.tif'),
+    zero_background = TRUE
+    )
+  whitebox::wbt_d8_pointer(
+    file.path(rdir,'patch-fill.tif'),
+    file.path(rdir,'patch-pntr.tif')
+    )
+  whitebox::wbt_watershed(
+    file.path(rdir,'patch-pntr.tif'),
+    file.path(rdir,'patch-sink.tif'),
+    file.path(rdir,'patch-seg.tif')
+    )
+
+  seg <- terra::rast(file.path(rdir, 'patch-seg.tif'))
+  seg[seg <= 0] <- NA
+
+  # Fallback: suitable cells that drain off-mask (no interior pit, e.g. small
+  # patches) keep an identity via 8-connected components, so none are dropped.
+  unlab <- mask & is.na(seg)
+  cc <- terra::patches(
+    terra::ifel(unlab, 1, NA),
+    directions = 8,
+    zeroAsNA = TRUE
+    ) +
+    terra::global(seg, 'max', na.rm = TRUE)[[1]]
+
+  patch_id <- terra::mask(terra::cover(seg, cc), mask, maskvalues = c(NA, 0))
+
+  # persist the delineated patches and record the signature for next knit
+  terra::writeRaster(patch_id, patches_tif, overwrite = TRUE)
+  writeLines(sig, sig_file)
+}
+names(patch_id) <- 'patch'
+
+# aggregate predicted probability over each patch (max and mean)
+patch_max  <- terra::zonal(pr, patch_id, fun = 'max',  na.rm = TRUE)
+patch_mean <- terra::zonal(pr, patch_id, fun = 'mean', na.rm = TRUE)
+patch_prob <- merge(patch_max, patch_mean, by = 'patch')
+names(patch_prob) <- c('patch', 'prob_max', 'prob_mean')
+
+n_patches <- nrow(patch_prob)
+```
+
+We delineate patches on the example model's probability surface by binarizing at
+the sensitivity–specificity threshold (`sens_spec` = `r sens_spec`) and running a
+marker-controlled watershed on the masked surface: cores separated by a
+probability drop of at least the prominence `delta` (= `r delta`) split into
+distinct patches, even where that neck never crosses the binary threshold.
+Suitable cells with no interior core fall back to connected-component labelling,
+so no habitat is dropped, yielding `r n_patches` candidate patches.
+Scoring each patch against ground-truth presences, and confirming stability of
+the patch-level DCA across a reasonable `delta` range, follow once real threshold
+and ground-truth values are joined in.
+
+### Correcting to the Area of Applicability
 
 The area of applicability is the portion of the landscape where the model is interpolating. 
 For SDMs our work has shown that the area of applicability (Meyers & Pebesma) is best calculated using only training presences, or these and ground-truthed absences. 

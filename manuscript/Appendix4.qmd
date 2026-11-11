@@ -1,0 +1,118 @@
+---
+title: "Appendix 4 — More covariates, smaller area of applicability"
+date: last-modified
+---
+
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 150)
+suppressPackageStartupMessages({library(terra); library(CAST); library(caret); library(data.table); library(ggplot2)})
+HERE <- ".." # this .qmd lives in manuscript/; repo root is ..
+for (f in list.files(file.path(HERE, "R"), "^fn_.*\\.R$", full.names = TRUE)) source(f)
+```
+
+**Situation.** The area of applicability (AOA) is the part of the landscape where a model interpolates rather than extrapolates, found by measuring how dissimilar each location is, in predictor space, from the training data (Meyer & Pebesma 2021). Because that dissimilarity is measured across *all* of a model's covariates, the AOA is a property of predictor-space geometry, not of the response: adding covariates — even uninformative ones — stretches the space the training sample has to cover, and a fixed, spatially clustered survey covers proportionally less of it. The manuscript asserts that models with fewer covariates retain larger AOAs; here we show that directly on a virtual species, where the true landscape is known.
+
+**Experiment.** Following the virtual-species convention (Grimmett et al. 2021), each replicate simulates a landscape of twelve spatially autocorrelated predictors and a rare species whose true niche depends on only the first three. We drew a single clustered survey (one accessible core, as real occurrence data tend to be), then fit the same kind of SDM (a GLM) using the first $K$ covariates for $K = 2, 3, 4, 6, 8, 10, 12$. For each model we computed the AOA over the whole landscape with `CAST::aoa()` and recorded the fraction of the landscape inside it. Because a reviewer will rightly ask whether weighting the dissimilarity by variable importance rescues the richer models, we scored every model two ways: with equal variable weights, and with the dissimilarity weighted by the fitted model's variable importance — passing the `caret` `train` object straight to `aoa()`, so the weights are `caret::varImp` (the GLM $|z|$ statistics), the CAST-recommended default that down-weights weak predictors. Within a replicate everything but the number of covariates — the species, the survey, the landscape — is held fixed, so any change in the AOA is attributable to dimensionality alone; we repeated the whole simulation over ten random landscapes (seeds 1–10) to see how general the effect is.
+
+```{r simulate-aoa}
+#| include: false
+Kseq <- c(2, 3, 4, 6, 8, 10, 12)
+
+## One replicate: build a landscape + virtual species + clustered survey, return the AOA fraction per K
+## and (for the rings map) each model's DI/threshold field.
+sim_one <- function(seed) {
+  set.seed(seed)
+  nx <- ny <- 80; P <- 12
+  r0 <- rast(nrows = ny, ncols = nx, xmin = 0, xmax = 1, ymin = 0, ymax = 1)
+  xy <- xyFromCell(r0, 1:ncell(r0))
+  smooth_field <- function(x, y, nh = 4, mf = 1.6) {   # spatially autocorrelated, standardised
+    v <- numeric(length(x))
+    for (k in 1:nh) v <- v + rnorm(1) * sin(2*pi*(runif(1,-mf,mf)*x + runif(1,-mf,mf)*y) + runif(1,0,2*pi))
+    as.numeric(scale(v))
+  }
+  L <- sapply(1:P, function(j) smooth_field(xy[,1], xy[,2]))
+  env <- rast(r0, nlyr = P); values(env) <- L; names(env) <- sprintf("v%02d", 1:P)
+  pres <- rbinom(nrow(L), 1, plogis(-3.0 + 1.6*L[,1] - 1.3*L[,2] + 0.9*L[,3] - 0.7*L[,1]*L[,2]))  # niche on v01-v03
+  n_tr <- 300; rad <- 0.16                            # one accessible survey core
+  sx <- pmin(pmax(0.5 + rnorm(n_tr, 0, rad), 0), 1); sy <- pmin(pmax(0.5 + rnorm(n_tr, 0, rad), 0), 1)
+  cells <- cellFromXY(env, cbind(sx, sy))
+  tr <- data.table(L[cells, ]); setnames(tr, names(env))
+  tr[, pa := factor(ifelse(pres[cells] == 1, "pres", "abs"), levels = c("abs", "pres"))]  # caret needs a factor outcome
+  ## Each model scored two ways: DI with EQUAL variable weights, and the CAST-recommended default
+  ## where the DI is weighted by the fitted model's variable importance (caret::varImp -> |z| for a GLM),
+  ## which down-weights weak predictors. The second is driven by the caret `train` object itself.
+  fr <- list(); rings <- vector("list", length(Kseq))
+  for (i in seq_along(Kseq)) {
+    vars  <- names(env)[1:Kseq[i]]; trv <- as.data.frame(tr[, ..vars])
+    m     <- train(x = trv, y = tr$pa, method = "glm", family = "binomial",
+                   trControl = trainControl(method = "none"))                 # the SDM (caret GLM)
+    a_eq  <- aoa(newdata = env[[vars]], train = trv, verbose = FALSE)         # equal variable weights
+    a_imp <- aoa(newdata = env[[vars]], model = m,   verbose = FALSE)         # weighted by the model's varImp
+    fr[[i]] <- data.table(seed = seed, K = Kseq[i],
+                          weighting = c("equal", "importance"),
+                          aoa_frac  = c(mean(values(a_eq$AOA)  == 1, na.rm = TRUE),
+                                        mean(values(a_imp$AOA) == 1, na.rm = TRUE)))
+    rings[[i]] <- data.table(xy, K = Kseq[i], ratio = values(a_imp$DI)[,1] / a_imp$parameters$threshold)  # importance-weighted
+  }
+  list(frac = rbindlist(fr), rings = rbindlist(rings), sx = sx, sy = sy)
+}
+
+res  <- lapply(1:10, sim_one)                         # 10 replicate landscapes
+allf <- rbindlist(lapply(res, `[[`, "frac"))
+allf[, weighting := factor(weighting, levels = c("equal", "importance"),
+                           labels = c("equal weighting", "importance weighting"))]
+fwrite(allf, file.path(HERE, "data", "aoa_covariate_fraction.csv"))
+r1   <- res[[1]]                                      # representative landscape for the rings map
+
+## summary + prose numbers (per weighting)
+summ <- allf[, .(mean = mean(aoa_frac), lo = min(aoa_frac), hi = max(aoa_frac)), by = .(K, weighting)]
+mget_mean <- function(wl, k) 100 * summ[weighting == wl & K == k, mean]
+eq_lo <- mget_mean("equal weighting", min(Kseq));      eq_hi <- mget_mean("equal weighting", max(Kseq))
+im_lo <- mget_mean("importance weighting", min(Kseq)); im_hi <- mget_mean("importance weighting", max(Kseq))
+wide_im <- dcast(allf[weighting == "importance weighting"], seed ~ K, value.var = "aoa_frac")
+n_decline <- sum(wide_im[[as.character(max(Kseq))]] < wide_im[[as.character(min(Kseq))]])  # importance: smaller at 12 than 2
+
+## Figure: AOA boundary as a contracting contour ring, one per covariate count, on one landscape
+p_rings <- ggplot(r1$rings, aes(x, y)) +
+  geom_point(data = data.table(x = r1$sx, y = r1$sy), size = 0.3, colour = "grey55", alpha = 0.6) +
+  geom_contour(aes(z = ratio, colour = K, group = K), breaks = 1, linewidth = 0.7) +
+  scale_colour_gradient(name = "covariates", low = cda_cols[["ratio_low"]], high = cda_cols[["aoa"]], breaks = Kseq) +
+  coord_equal(expand = FALSE) +
+  labs(title = "The area of applicability contracts as covariates accumulate",
+       subtitle = "One landscape, importance-weighted AOA: each ring is a model's boundary; grey points are the survey.") +
+  theme_cda() + theme(axis.text = element_blank(), axis.ticks = element_blank(),
+                      axis.title = element_blank(), panel.grid = element_blank())
+ggsave(file.path(HERE, "figures", "aoa_covariate_rings.png"), p_rings, width = 7, height = 5.6, dpi = 150)
+
+## Figure: mean fraction within AOA by covariate count, equal vs importance weighting (range over 10 replicates)
+p_bars <- ggplot(summ, aes(factor(K), mean, fill = weighting)) +
+  geom_col(width = 0.7, position = position_dodge(0.7)) +
+  geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.18, linewidth = 0.3, colour = "grey30",
+                position = position_dodge(0.7)) +
+  scale_fill_manual(name = NULL, values = c("equal weighting" = cda_cols[["ratio_low"]],
+                                            "importance weighting" = cda_cols[["aoa"]])) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1), expand = expansion(c(0, 0.08))) +
+  labs(x = "Number of covariates in the model", y = "Landscape within AOA",
+       title = "Fewer covariates, larger area of applicability — weighting barely helps",
+       subtitle = "Bars = mean over 10 replicate landscapes; whiskers = range. Importance weighting does not undo the contraction.") +
+  theme_cda()
+ggsave(file.path(HERE, "figures", "aoa_covariate_bars.png"), p_bars, width = 7.5, height = 4.4, dpi = 150)
+```
+
+**Result.** Averaged over the ten replicates, the equal-weight AOA falls from `r sprintf("%.0f%%", eq_lo)` of the landscape at two covariates to `r sprintf("%.0f%%", eq_hi)` at twelve. Crucially, importance weighting barely changes this — `r sprintf("%.0f%%", im_lo)` down to `r sprintf("%.0f%%", im_hi)` — and in all `r n_decline` of 10 replicates the importance-weighted AOA was still smaller at twelve covariates than at two (second figure). Even though only three covariates truly define the species, the nine noise predictors carry enough spurious GLM importance that down-weighting them does not spare the AOA; weighting softens the collapse by only a few points, not away. Geometrically (first figure) every model's in-domain region is anchored on the surveyed core, and the boundary contracts toward it as covariates are added: the low-dimensional models reach far across the map, the high-dimensional ones retreat to the environments the survey actually sampled. The decline is steepest over the first few covariates and then flattens, as later predictors add less fresh space once the easy coverage is spent. It is a strong tendency rather than a law — individual replicates have the AOA tick up when a lucky covariate opens fresh space — but the direction is unambiguous and survives importance weighting.
+
+```{r}
+#| label: fig-aoa-rings
+#| fig-cap: "Importance-weighted AOA boundaries for one virtual species and one clustered survey (grey points), fit with an increasing number of covariates. Each ring is a model's boundary (dissimilarity index = threshold); lighter rings use few covariates and enclose most of the landscape, darker rings use many and contract toward the surveyed core. The response is identical throughout — only the predictor-space dimensionality changes."
+p_rings
+```
+
+```{r}
+#| label: fig-aoa-bars
+#| fig-cap: "Fraction of the landscape inside the AOA against the number of covariates, under equal vs importance weighting of the dissimilarity index. Bars are means over ten replicate landscapes, whiskers their range. The two weightings track each other closely: importance weighting lifts the AOA by only a few points and leaves the contraction intact, because the noise covariates still carry spurious importance."
+p_bars
+```
+
+**Conclusion.** The AOA is a dimensionality budget: every covariate a model carries is a direction in which the training sample must resemble the landscape, so richer models interpolate over less of it — and weighting the dissimilarity by variable importance, the obvious remedy, does not buy the budget back, because weak predictors retain enough spurious importance to keep spending it. This is the geometric counterpart to the skill downgrade of Appendix 2 and the shifting in-AOA prevalence of Appendix 3 — restricting to the AOA is more consequential, not less, for a many-covariate model. Prefer parsimonious covariate sets when a broad area of applicability matters, and always report the AOA alongside the model, because two models of equal apparent skill can apply to very different fractions of the same landscape.
