@@ -65,7 +65,6 @@ options(
 ```{r load libraries}
 library(sf)
 library(terra)
-library(whitebox)
 ```
 
 # Main 
@@ -82,7 +81,125 @@ This tool offers a relevant lens to contextualise the net benefits of using mode
 
 # Conceptual Background 
 
-<< DCA Plot here >> all components labeled
+```{r conceptual-dca, fig.cap = "The anatomy of a decision curve. Net benefit (y) is plotted against the threshold probability $p_t$ (x) for three strategies: *treat none* (survey nothing, net benefit fixed at zero), *treat all* (survey every site, falling with $p_t$ as wasted visits cost more), and a *model* that ranks sites by predicted suitability. The model is useful wherever its curve sits above both references. The dotted line marks $p_t = 0.20$ — a manager content to survey five sites to find one occupied — where the point shows the net benefit the model delivers. Illustrative data, not the case study.", fig.width = 8, fig.height = 5}
+library(dcurves); library(dplyr); library(ggplot2)
+
+set.seed(1)
+n  <- 60000
+p  <- rbeta(n, 0.6, 4.4) # mean ~ 0.12: many low, few high scores
+ex <- data.frame(Presence = rbinom(n, 1, p), prob = p)
+PI <- mean(ex$prob) # landscape prevalence of the example
+
+# Decision threshold expressed as a ratio: willing to treat X sites to find 1 ->
+# p_t = 1 / X. PT_MARK = 0.10 is the 1:10 ratio (treat 10 to find 1).
+PT_MARK <- 0.10
+X_RATIO <- round(1 / PT_MARK)
+PT_GRID <- seq(0.001, 0.60, by = 0.005)
+
+d <- dca(Presence ~ prob, data = ex, thresholds = PT_GRID,
+         label = list(prob = "Model")) |>
+  as_tibble()
+
+lab <- c(
+  Model = "Model", 
+  "Treat All" = "Treat all", 
+  "Treat None" = "Treat none"
+  )
+nb  <- d |>
+  transmute(
+    strategy = factor(lab[as.character(label)], 
+    levels = lab),
+    threshold, net_benefit)
+
+cols <- c(
+  "Model" = "#1b7837", 
+  "Treat all" = "#d95f02", 
+  "Treat none" = "grey45")
+
+# net benefit the model delivers at the decision threshold (the 1:X ratio)
+nb_mark <- nb$net_benefit[nb$strategy == "Model"][
+             which.min(abs(nb$threshold[nb$strategy == "Model"] - PT_MARK))]
+
+# percent lift: the model's net benefit over the best reference strategy
+# (treat-all / treat-none) at this threshold
+ta_mark  <- nb$net_benefit[nb$strategy == "Treat all"][
+             which.min(abs(nb$threshold[nb$strategy == "Treat all"] - PT_MARK))]
+ref_mark <- max(ta_mark, 0)                       # best of treat-all / treat-none
+lift_pct <- (nb_mark - ref_mark) / ref_mark * 100
+
+# recomputed fill: the band between the Model and Treat-all curves (the net
+# benefit the model adds over surveying everything)
+m  <- subset(nb, strategy == "Model",     c(threshold, net_benefit)); names(m)[2]  <- "model"
+ta <- subset(nb, strategy == "Treat all", c(threshold, net_benefit)); names(ta)[2] <- "treat_all"
+band <- merge(m, ta, by = "threshold")
+band$ymin <- pmin(band$model, band$treat_all)
+band$ymax <- pmax(band$model, band$treat_all)
+band = band |>
+  mutate(ymin = if_else(threshold >PI, 0, ymin))
+
+ggplot(nb, aes(threshold, net_benefit, colour = strategy)) +
+
+  geom_ribbon(data = band, aes(x = threshold, ymin = ymin, ymax = ymax),
+              inherit.aes = FALSE, fill = "#1b7837", alpha = 0.12) +
+
+  geom_hline(yintercept = 0, colour = "grey20", linewidth = 1) +
+  geom_vline(xintercept = PT_MARK, colour = "grey10", linetype = "dotted") +
+
+  geom_line(data = subset(nb, grepl("Treat", strategy)),
+            aes(linetype = strategy), linewidth = 1) +
+  geom_line(data = subset(nb, strategy == "Model"), linewidth = 1.1) +
+
+  annotate("point", x = PT_MARK, y = nb_mark, colour = "#1b7837", size = 2.4) +
+
+  # dynamic "treat X to find 1" label at the decision threshold
+  annotate(
+    "label", x = PT_MARK, y = PI * 1.16, 
+    hjust = 0.5, size = 5, colour = "grey30", 
+    label = sprintf("atop(p[t]==%.2f, 'treat %d to find 1')", PT_MARK, X_RATIO),
+    parse = TRUE) +
+
+  # benefit caption at the 1:X ratio: percent lift over the best reference
+  annotate(
+    "label", x = PT_MARK + 0.015, y = nb_mark,
+    size = 5, colour = "#1b7837",
+    fill = "white", label = sprintf("Lift: +%.0f%%", lift_pct)) +
+
+  # prevalence sits where treat-all crosses treat-none (p_t = prevalence)
+  annotate(
+    "segment", x = PI + 0.058, y = 0.05,
+    xend = PI, yend = 0,  colour = "grey30",
+    arrow = arrow(length = unit(0.18, "cm"))
+    ) +
+
+  annotate(
+    "label", x = PI + 0.058, y = 0.05, 
+    hjust = 0, size = 5, colour = "grey20",
+    fill = "white", 
+    label = sprintf("Prevalence = %.0f%%", 100 * PI)
+    ) +
+
+  scale_colour_manual(values = cols, name = NULL) +
+  scale_linetype_manual(
+    values = c("Treat all" = "solid", "Treat none" = "22"),
+    guide = "none") +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(ylim = c(-0.01, PI * 1.25), xlim = c(0, 0.40)) +
+
+  labs(
+    x = expression("Threshold probability  " * p[t]), 
+    y = "Net benefit",
+    title = "Decision curve analysis plot",
+    subtitle = "A model and two reference strategies.") +
+
+  theme_minimal(base_size = 18) +
+  theme(
+    legend.position = c(0.80, 0.80),
+    legend.background = element_rect(fill = "white", colour = NA),
+    legend.key.width  = unit(1.4, "lines"),
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+    )
+```
 
 Decision curve analysis is considered visually on a plot with two axis. 
 The Y axis is the net benefit of making the action. 
@@ -273,88 +390,12 @@ presence, with an aggregated predicted probability (max or mean) over its pixels
 used and confirm the patch-level DCA is stable across a reasonable δ range. >>
 
 ```{r patch delineation watershed}
-# Single example model. sens_spec and delta are placeholders - real
-# sensitivity-specificity and a tuned prominence are joined in later.
-# Requires WhiteboxTools (whitebox::install_whitebox()).
-whitebox::wbt_verbose(FALSE)
-sens_spec <- 0.35   # suitable-habitat threshold (probability units)
-delta <- 0.05   # prominence: min neck depth to split two cores
-
-rdir        <- file.path('..', 'data', 'raster')
-src_tif     <- file.path(rdir, '1-3arc-Iteration1-PA1:35DO:0-Seed5001-Pr.tif')
-patches_tif <- file.path(rdir, 'example-patches.tif')
-sig_file    <- file.path(rdir, 'example-patches.sig')
-
-pr <- terra::rast(src_tif)
-
-# Skip the (costly, ~3e8-cell) watershed pipeline unless something that affects
-# the result changed: the thresholds, or the source raster. A signature sidecar
-# records those inputs; a match means the cached patches are still valid.
-sig   <- paste(sens_spec, delta, basename(src_tif),
-               file.info(src_tif)$size, file.mtime(src_tif), sep = '|')
-fresh <- file.exists(patches_tif) && file.exists(sig_file) &&
-         identical(readLines(sig_file, warn = FALSE), sig)
-
-if (fresh) {
-  patch_id <- terra::rast(patches_tif)
-} else {
-  mask <- pr >= sens_spec
-
-  # Marker-controlled watershed via the hydrological inversion trick: invert the
-  # probability surface so high-probability cores become pits, merge necks
-  # shallower than delta (fill max_depth), label the surviving pits as seeds,
-  # then route every suitable cell to the core it drains into. Intermediates
-  # persist to data/raster so a partial re-run can reuse the finished steps.
-  dem <- terra::ifel(mask, 1 - pr, NA)                 # cores -> pits
-  terra::writeRaster(dem, file.path(rdir, 'patch-dem.tif'), overwrite = TRUE)
-  whitebox::wbt_fill_depressions(
-    file.path(rdir,'patch-dem.tif'),
-    file.path(rdir,'patch-fill.tif'),
-    max_depth = delta
-    )
-  whitebox::wbt_sink(
-    file.path(rdir,'patch-fill.tif'),
-    file.path(rdir,'patch-sink.tif'),
-    zero_background = TRUE
-    )
-  whitebox::wbt_d8_pointer(
-    file.path(rdir,'patch-fill.tif'),
-    file.path(rdir,'patch-pntr.tif')
-    )
-  whitebox::wbt_watershed(
-    file.path(rdir,'patch-pntr.tif'),
-    file.path(rdir,'patch-sink.tif'),
-    file.path(rdir,'patch-seg.tif')
-    )
-
-  seg <- terra::rast(file.path(rdir, 'patch-seg.tif'))
-  seg[seg <= 0] <- NA
-
-  # Fallback: suitable cells that drain off-mask (no interior pit, e.g. small
-  # patches) keep an identity via 8-connected components, so none are dropped.
-  unlab <- mask & is.na(seg)
-  cc <- terra::patches(
-    terra::ifel(unlab, 1, NA),
-    directions = 8,
-    zeroAsNA = TRUE
-    ) +
-    terra::global(seg, 'max', na.rm = TRUE)[[1]]
-
-  patch_id <- terra::mask(terra::cover(seg, cc), mask, maskvalues = c(NA, 0))
-
-  # persist the delineated patches and record the signature for next knit
-  terra::writeRaster(patch_id, patches_tif, overwrite = TRUE)
-  writeLines(sig, sig_file)
-}
-names(patch_id) <- 'patch'
-
-# aggregate predicted probability over each patch (max and mean)
-patch_max  <- terra::zonal(pr, patch_id, fun = 'max',  na.rm = TRUE)
-patch_mean <- terra::zonal(pr, patch_id, fun = 'mean', na.rm = TRUE)
-patch_prob <- merge(patch_max, patch_mean, by = 'patch')
-names(patch_prob) <- c('patch', 'prob_max', 'prob_mean')
-
-n_patches <- nrow(patch_prob)
+# The marker-controlled watershed patch delineation is run in Analyses.qmd (it is
+# costly, ~3e8 cells, and relies on WhiteboxTools); here we read its summary.
+patch_summary <- read.csv(file.path('..', 'data', 'patch_delineation_summary.csv'))
+sens_spec <- patch_summary$sens_spec
+delta     <- patch_summary$delta
+n_patches <- patch_summary$n_patches
 ```
 
 We delineate patches on the example model's probability surface by binarizing at

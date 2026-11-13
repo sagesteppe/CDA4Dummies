@@ -102,3 +102,186 @@ suitable absences. (The ROC-AUC drop across all models is quantified in Appendix
 #| fig-cap: "Naive (full hold-out) vs AOA-honest (in-domain) decision curve for the example model, both at 5% prevalence. The two agree only at the broadest thresholds; the gap is the inflation contributed by easy absences, and the in-domain curve drops below \"survey none\" well before the \"survey five to find one\" tolerance."
 p_aoa
 ```
+
+## Patch delineation (watershed)
+
+Delineate suitable-habitat patches on the example model's probability surface, so the main
+text's "pixels to patches" unit of analysis has concrete numbers behind it. Binarize at the
+sensitivity–specificity threshold and run a marker-controlled watershed on the masked surface;
+cores separated by a probability drop of at least the prominence `delta` split into distinct
+patches. The watershed pipeline is costly (~3e8 cells) and relies on WhiteboxTools, so the
+delineated raster is cached to `data/raster/` with an input signature, and a compact summary is
+written to `data/patch_delineation_summary.csv` for the manuscript to read.
+
+```{r patch-delineation}
+#| include: false
+# sens_spec and delta are placeholders - real sensitivity-specificity and a tuned prominence
+# are joined in later. Requires WhiteboxTools (whitebox::install_whitebox()).
+suppressPackageStartupMessages({library(terra); library(whitebox)})
+whitebox::wbt_verbose(FALSE)
+sens_spec <- 0.35   # suitable-habitat threshold (probability units)
+delta <- 0.05   # prominence: min neck depth to split two cores
+min_area <- 100   # drop patches at or below this area (m^2): slivers too small to survey
+
+rdir        <- file.path(HERE, "data", "raster")
+src_tif     <- file.path(rdir, "1-3arc-Iteration1-PA1:35DO:0-Seed5001-Pr.tif")
+patches_tif <- file.path(rdir, "example-patches.tif")
+sig_file    <- file.path(rdir, "example-patches.sig")
+
+pr <- terra::rast(src_tif)
+
+# Skip the (costly, ~3e8-cell) watershed pipeline unless something that affects
+# the result changed: the thresholds, or the source raster. A signature sidecar
+# records those inputs; a match means the cached patches are still valid.
+sig   <- paste(sens_spec, delta, min_area, basename(src_tif),
+               file.info(src_tif)$size, file.mtime(src_tif), sep = "|")
+fresh <- file.exists(patches_tif) && file.exists(sig_file) &&
+         identical(readLines(sig_file, warn = FALSE), sig)
+
+if (fresh) {
+  patch_id <- terra::rast(patches_tif)
+} else {
+  mask <- pr >= sens_spec
+
+  # Marker-controlled watershed via the hydrological inversion trick: invert the
+  # probability surface so high-probability cores become pits, merge necks
+  # shallower than delta (fill max_depth), label the surviving pits as seeds,
+  # then route every suitable cell to the core it drains into. Intermediates
+  # persist to data/raster so a partial re-run can reuse the finished steps.
+  dem <- terra::ifel(mask, 1 - pr, NA)                 # cores -> pits
+  terra::writeRaster(dem, file.path(rdir, "patch-dem.tif"), overwrite = TRUE)
+  whitebox::wbt_fill_depressions(
+    file.path(rdir, "patch-dem.tif"),
+    file.path(rdir, "patch-fill.tif"),
+    max_depth = delta
+    )
+  whitebox::wbt_sink(
+    file.path(rdir, "patch-fill.tif"),
+    file.path(rdir, "patch-sink.tif"),
+    zero_background = TRUE
+    )
+  whitebox::wbt_d8_pointer(
+    file.path(rdir, "patch-fill.tif"),
+    file.path(rdir, "patch-pntr.tif")
+    )
+  whitebox::wbt_watershed(
+    file.path(rdir, "patch-pntr.tif"),
+    file.path(rdir, "patch-sink.tif"),
+    file.path(rdir, "patch-seg.tif")
+    )
+
+  seg <- terra::rast(file.path(rdir, "patch-seg.tif"))
+  seg[seg <= 0] <- NA
+
+  # Fallback: suitable cells that drain off-mask (no interior pit, e.g. small
+  # patches) keep an identity via 8-connected components, so none are dropped.
+  unlab <- mask & is.na(seg)
+  cc <- terra::patches(
+    terra::ifel(unlab, 1, NA),
+    directions = 8,
+    zeroAsNA = TRUE
+    ) +
+    terra::global(seg, "max", na.rm = TRUE)[[1]]
+
+  patch_id <- terra::mask(terra::cover(seg, cc), mask, maskvalues = c(NA, 0))
+
+  # Drop sub-threshold slivers: patches whose total area is at or below min_area
+  # are too small to be a meaningful survey unit, so we null them out here (once)
+  # and bake the filter into the cached raster, so every downstream step inherits
+  # it. Area is cell count x cell area; terra area/perimeter isn't needed on a
+  # projected (equal-area-enough) grid.
+  cell_area <- prod(terra::res(patch_id))
+  fr        <- terra::freq(patch_id)
+  keep_ids  <- fr$value[fr$count * cell_area > min_area]
+  patch_id  <- terra::ifel(patch_id %in% keep_ids, patch_id, NA)
+
+  # persist the delineated (and size-filtered) patches, record the signature
+  terra::writeRaster(patch_id, patches_tif, overwrite = TRUE)
+  writeLines(sig, sig_file)
+}
+names(patch_id) <- "patch"
+
+# aggregate predicted probability over each patch (max and mean)
+patch_max  <- terra::zonal(pr, patch_id, fun = "max",  na.rm = TRUE)
+patch_mean <- terra::zonal(pr, patch_id, fun = "mean", na.rm = TRUE)
+patch_prob <- merge(patch_max, patch_mean, by = "patch")
+names(patch_prob) <- c("patch", "prob_max", "prob_mean")
+
+n_patches <- nrow(patch_prob)
+
+# GROUND TRUTH: which patches does the taxon actually occupy? Overlay the iter-2
+# presences (UTM 13N, same CRS as the raster) onto the delineated patches. A
+# presence that lands below sens_spec sits off every patch (patch = NA); it marks
+# suitable habitat the binarization missed, not a labelling error, so we count it
+# rather than drop it silently.
+occ_pts    <- terra::vect(file.path(HERE, "data", "3m-presence-iter2.gpkg"))
+occ_hit    <- terra::extract(patch_id, occ_pts)$patch
+occ_ids    <- sort(unique(occ_hit[!is.na(occ_hit)]))  # occupied patch ids
+n_points     <- length(occ_hit)
+n_points_off <- sum(is.na(occ_hit))                   # presences off every patch
+n_occupied   <- length(occ_ids)
+
+# flag each patch as occupied / unoccupied for the patch-level DCA
+patch_prob$occupied <- patch_prob$patch %in% occ_ids
+write.csv(patch_prob,
+          file.path(HERE, "data", "patch_predictions.csv"), row.names = FALSE)
+
+# compact summary for the manuscript's inline values
+write.csv(
+  data.frame(sens_spec = sens_spec, delta = delta, min_area = min_area,
+             n_patches = n_patches, n_occupied = n_occupied,
+             n_points = n_points, n_points_off = n_points_off),
+  file.path(HERE, "data", "patch_delineation_summary.csv"),
+  row.names = FALSE)
+```
+
+## Conceptual decision curve (illustrative — backup)
+
+Backup of the tuned, self-contained example behind the main-text conceptual DCA figure. Not the
+case-study data. The model is deliberately *miscalibrated*: a share of true presences are poorly
+detected and score like absences, so (unlike a calibrated model) the curve does not dominate the
+references — it dips just below *treat all* at very low $p_t$, and its tail droops as $p_t$ rises
+and the model sheds sites. Kept here so the simulation parameters aren't lost; the annotated
+version lives in the manuscript.
+
+```{r conceptual-dca-backup}
+#| include: false
+set.seed(1)
+n <- 60000
+y <- rbinom(n, 1, 0.12)                              # true outcomes, ~12% prevalence
+
+# miscalibrated model: ~half of presences weakly detected and scored like absences
+miss <- runif(n) < 0.50
+prob <- ifelse(y == 1 & !miss, rbeta(n, 3, 3.5),     # detected presences: moderate score
+        ifelse(y == 1 &  miss, rbeta(n, 0.8, 10),    # missed presences: look like absences
+                               rbeta(n, 0.5, 11)))   # absences: low score
+ex <- data.frame(Presence = y, prob = prob)
+PI <- mean(ex$Presence)                              # prevalence (NOT mean(prob): miscalibrated)
+
+PT_MARK <- 0.20                                      # 1:5 ratio (treat 5 to find 1)
+PT_GRID <- seq(0.001, 0.60, by = 0.005)
+
+d <- dca(Presence ~ prob, data = ex, thresholds = PT_GRID, label = list(prob = "Model")) |>
+  as_tibble()
+lab <- c(Model = "Model", "Treat All" = "Treat all", "Treat None" = "Treat none")
+nb  <- d |> transmute(strategy = factor(lab[as.character(label)], levels = lab),
+                      threshold, net_benefit)
+cols <- c("Model" = "#1b7837", "Treat all" = "#d95f02", "Treat none" = "grey45")
+
+p_concept_backup <- ggplot(nb, aes(threshold, net_benefit, colour = strategy)) +
+  geom_hline(yintercept = 0, colour = "grey20", linewidth = 0.8) +
+  geom_vline(xintercept = PT_MARK, colour = "grey10", linetype = "dotted") +
+  geom_line(data = subset(nb, grepl("Treat", strategy)), aes(linetype = strategy), linewidth = 1) +
+  geom_line(data = subset(nb, strategy == "Model"), linewidth = 1.1) +
+  scale_colour_manual(values = cols, name = NULL) +
+  scale_linetype_manual(values = c("Treat all" = "solid", "Treat none" = "22"), guide = "none") +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(ylim = c(-0.02, PI * 1.25), xlim = c(0, 0.50)) +
+  labs(x = expression("Threshold probability  " * p[t]), y = "Net benefit",
+       title = "Decision curve analysis (illustrative, miscalibrated model)") +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.minor = element_blank())
+
+ggsave(file.path(HERE, "figures", "conceptual_dca_backup.png"),
+       p_concept_backup, width = 8, height = 5, dpi = 150)
+```
